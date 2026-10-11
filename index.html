@@ -283,7 +283,7 @@
                     <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3 mt-4 text-xs">
                         <div class="flex justify-between font-bold text-slate-700"><span>Ultima Estrazione (${ext.data})</span><span class="text-blue-600">Esito Online</span></div>
                         <div class="flex flex-wrap gap-1.5 items-center">
-                            ${ext.numeri.map(n => `<div class="ball ${(state.schedina.p1.includes(n)\vert{}\vert{}state.schedina.p2.includes(n)) ? 'ball-hit':'ball-drawn'}" style="width:28px;height:28px;font-size:0.75rem;">${n}</div>`).join('')}
+                            ${ext.numeri.map(n => `<div class="ball ${(state.schedina.p1.includes(n)||state.schedina.p2.includes(n)) ? 'ball-hit':'ball-drawn'}" style="width:28px;height:28px;font-size:0.75rem;">${n}</div>`).join('')}
                             ${ext.superstar ? `<div class="ball ball-star" style="width:28px;height:28px;font-size:0.75rem;">${ext.superstar}</div>` : ''}
                         </div>
                         <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1 font-medium text-slate-700">

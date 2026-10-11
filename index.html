@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SuperBotto 🍀</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { background-color: #f8fafc; color: #1e293b; }
+        .card-white { background-color: #ffffff; border: 1px solid #e2e8f0; }
+        .ball {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        }
+        .ball-sm {
+            width: 26px;
+            height: 26px;
+            font-size: 0.75rem;
+        }
+        .ball-main { background: linear-gradient(135deg, #10B981, #047857); }
+        .ball-star { background: linear-gradient(135deg, #F59E0B, #D97706); }
+        .ball-drawn { background: linear-gradient(135deg, #3B82F6, #1D4ED8); }
+        .ball-hit { background: linear-gradient(135deg, #EF4444, #B91C1C); border: 2px solid #FDE047; }
+    </style>
+</head>
+<body class="font-sans pb-24 bg-slate-100">
+
+    <!-- Header Verde Smeraldo -->
+    <header class="bg-emerald-600 text-white p-4 shadow-md sticky top-0 z-50 text-center max-w-md mx-auto">
+        <div class="flex items-center justify-center gap-2">
+            <h1 class="text-2xl font-black tracking-wide">SuperBotto</h1>
+            <span class="text-xl">🍀</span>
+        </div>
+        <p class="text-xs text-emerald-100 mt-1 font-medium" id="header-subtitle">Caricamento dati...</p>
+    </header>
+
+    <!-- Content Area -->
+    <main class="max-w-md mx-auto p-4 space-y-4" id="app-content">
+        <div class="text-center py-10 text-slate-400 font-medium">⏳ Connessione al database...</div>
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2.5 text-xs font-bold max-w-md mx-auto z-50 shadow-lg">
+        <button onclick="navigate('bacheca')" class="flex flex-col items-center text-emerald-600 nav-btn" id="btn-bacheca">
+            <span class="text-lg">🍀</span> Bacheca
+        </button>
+        <button onclick="navigate('cassa')" class="flex flex-col items-center text-slate-500 nav-btn" id="btn-cassa">
+            <span class="text-lg">📊</span> Cassa
+        </button>
+        <button onclick="navigate('schedina')" class="flex flex-col items-center text-slate-500 nav-btn" id="btn-schedina">
+            <span class="text-lg">🎰</span> Schedina
+        </button>
+        <button onclick="navigate('versamenti')" class="flex flex-col items-center text-slate-500 nav-btn" id="btn-versamenti">
+            <span class="text-lg">💳</span> Versamenti
+        </button>
+    </nav>
+
+    <script>
+        // CONFIGURAZIONE SUPABASE
+        const SUPABASE_URL = "https://utywytptssixgpoyddbb.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0eXd5dHB0c3NpeGdwb3lkZGJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MzUyMzAsImV4cCI6MjEwNzIxMTIzMH0.ZOcxwtsY_wl7BJTrsjSCI7ceb8AuqD6u1ZwROEI2YEc";
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let currentPage = 'bacheca';
+        let state = {
+            pin: "1234",
+            users: ["Francesco", "Giovanni", "Franco", "Benny", "Beldo", "Beppe", "Disi", "Peps", "Massimo", "Igor"],
+            schedina: { p1: [5, 12, 28, 41, 63, 88], star1: 15, p2: [9, 17, 33, 52, 70, 81], star2: 44 },
+            versamenti: [],
+            estrazioni: [],
+            bacheca: [],
+            ultimaEstrazione: null
+        };
+
+        async function initDatabase() {
+            const { data, error } = await supabaseClient
+                .from('app_state')
+                .select('data')
+                .eq('id', 'main_db')
+                .single();
+
+            if (data && data.data) {
+                state = data.data;
+                renderCurrentPage();
+            } else if (error) {
+                console.error("Errore caricamento da Supabase:", error);
+            }
+
+            supabaseClient
+                .channel('public:app_state')
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_state' }, payload => {
+                    if (payload.new && payload.new.data) {
+                        state = payload.new.data;
+                        renderCurrentPage();
+                    }
+                })
+                .subscribe();
+        }
+
+        async function saveState() {
+            renderCurrentPage();
+            const { error } = await supabaseClient
+                .from('app_state')
+                .update({ data: state, updated_at: new Date().toISOString() })
+                .eq('id', 'main_db');
+
+            if (error) {
+                alert("Errore durante il salvataggio in rete!");
+                console.error(error);
+            }
+        }
+
+        function calculateMetrics() {
+            const numUsers = state.users.length || 1;
+            const costPerDraw = 3.00 / numUsers;
+            const totalDraws = state.estrazioni.length;
+            const totalSpesi = totalDraws * 3.00;
+            const totalCostPerUser = totalDraws * costPerDraw;
+
+            const totalVersato = state.versamenti.reduce((sum, v) => sum + (parseFloat(v.importo) || 0), 0);
+            const totalVincite = state.estrazioni.reduce((sum, e) => sum + (parseFloat(e.vincita) || 0), 0);
+            const winPerUser = totalVincite / numUsers;
+
+            const cassaComune = totalVersato - totalSpesi + totalVincite;
+
+            const saldi = state.users.map(user => {
+                const totalPaid = state.versamenti
+                    .filter(v => v.user === user)
+                    .reduce((sum, v) => sum + (parseFloat(v.importo) || 0), 0);
+                
+                const saldo = totalPaid - totalCostPerUser + winPerUser;
+                return { user, totalPaid, saldo };
+            });
+
+            return {
+                cassaComune: cassaComune < 0 ? 0 : cassaComune,
+                totalVersato,
+                totalVincite,
+                totalDraws,
+                totalSpesi,
+                numUsers,
+                costPerDraw,
+                saldi
+            };
+        }
+
+        function updateHeaderSubtitle() {
+            const m = calculateMetrics();
+            const sub = document.getElementById('header-subtitle');
+            if (sub) {
+                sub.innerText = `${m.numUsers} Colleghi • 2 Pannelli • ${m.costPerDraw.toFixed(2)}€ a testa`;
+            }
+        }
+
+        function navigate(page) {
+            currentPage = page;
+            document.querySelectorAll('.nav-btn').forEach(b => {
+                b.classList.remove('text-emerald-600');
+                b.classList.add('text-slate-500');
+            });
+            const activeBtn = document.getElementById('btn-' + page);
+            if(activeBtn) {
+                activeBtn.classList.remove('text-slate-500');
+                activeBtn.classList.add('text-emerald-600');
+            }
+            renderCurrentPage();
+        }
+
+        function renderCurrentPage() {
+            const content = document.getElementById('app-content');
+            if (currentPage === 'bacheca') content.innerHTML = renderBacheca();
+            if (currentPage === 'cassa') content.innerHTML = renderCassa();
+            if (currentPage === 'schedina') content.innerHTML = renderSchedina();
+            if (currentPage === 'versamenti') content.innerHTML = renderVersamenti();
+            updateHeaderSubtitle();
+        }
+
+        function renderBacheca() {
+            const m = calculateMetrics();
+            return `
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="card-white p-4 rounded-2xl flex flex-col justify-between h-32 relative shadow-sm">
+                        <div class="flex justify-between items-start text-slate-500"><span class="text-xs font-bold uppercase">Cassa<br>comune</span><span>👛</span></div>
+                        <div><div class="text-2xl font-black text-emerald-600">€ ${m.cassaComune.toFixed(2)}</div><div class="text-[11px] text-slate-400">disponibile</div></div>
+                    </div>
+                    <div class="card-white p-4 rounded-2xl flex flex-col justify-between h-32 relative shadow-sm">
+                        <div class="flex justify-between items-start text-slate-500"><span class="text-xs font-bold uppercase">Vincite totali</span><span>🏆</span></div>
+                        <div><div class="text-2xl font-black text-amber-500">€ ${m.totalVincite.toFixed(2)}</div><div class="text-[11px] text-slate-400">totali</div></div>
+                    </div>
+                    <div class="card-white p-4 rounded-2xl flex flex-col justify-between h-32 relative shadow-sm">
+                        <div class="flex justify-between items-start text-slate-500"><span class="text-xs font-bold uppercase">Giocate</span><span>📈</span></div>
+                        <div><div class="text-2xl font-black text-slate-800">${m.totalDraws}</div><div class="text-[11px] text-slate-400">estrazioni</div></div>
+                    </div>
+                    <div class="card-white p-4 rounded-2xl flex flex-col justify-between h-32 relative shadow-sm">
+                        <div class="flex justify-between items-start text-slate-500"><span class="text-xs font-bold uppercase">Soldi spesi</span><span>💸</span></div>
+                        <div><div class="text-2xl font-black text-slate-700">€ ${m.totalSpesi.toFixed(2)}</div><div class="text-[11px] text-slate-400">schedine</div></div>
+                    </div>
+                </div>
+
+                <div class="card-white p-4 rounded-2xl space-y-3 shadow-sm">
+                    <h2 class="font-bold text-sm text-slate-800 flex items-center gap-1.5"><span>🍀</span> Bacheca del Gruppo</h2>
+                    <form onsubmit="handlePost(event)" class="flex gap-2">
+                        <input type="text" id="b-msg" placeholder="Scrivi un messaggio al gruppo..." class="flex-1 bg-slate-50 border border-slate-200 text-slate-800 text-xs p-2.5 rounded-xl focus:outline-none focus:border-emerald-500" required />
+                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-4 font-bold rounded-xl shadow transition">Invia</button>
+                    </form>
+                    <div class="space-y-2 pt-1">
+                        ${state.bacheca.length === 0 ? '<div class="text-center text-xs text-slate-400 py-2">Nessun messaggio in bacheca</div>' : state.bacheca.map(b => `
+                            <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
+                                <div class="flex justify-between text-[11px] text-slate-400 font-bold"><span>${b.user}</span><span>${b.data}</span></div>
+                                <div class="text-slate-700 leading-relaxed">${b.testo}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCassa() {
+            const m = calculateMetrics();
+            return `
+                <div class="card-white p-5 rounded-2xl text-center shadow-sm border border-slate-200 space-y-1">
+                    <span class="text-xs uppercase tracking-wider font-extrabold text-slate-400">Cassa Comune Disponibile</span>
+                    <div class="text-3xl font-black text-emerald-600 mt-1">€ ${m.cassaComune.toFixed(2)}</div>
+                    <div class="text-[11px] text-slate-400 pt-1">Versati: ${m.totalVersato.toFixed(2)}€ • Spesi: ${m.totalSpesi.toFixed(2)}€ • Vinti: ${m.totalVincite.toFixed(2)}€</div>
+                </div>
+
+                <div class="card-white rounded-2xl overflow-hidden shadow-sm">
+                    <div class="p-3.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center text-xs font-bold text-slate-700">
+                        <span class="text-sm font-bold">Saldi Partecipanti (${m.numUsers})</span>
+                        <span class="text-slate-400">Quota: ${m.costPerDraw.toFixed(2)}€/estrazione</span>
+                    </div>
+                    <div class="divide-y divide-slate-100">
+                        ${m.saldi.map(s => `
+                            <div class="p-3.5 flex justify-between items-center text-xs">
+                                <div><span class="font-semibold text-slate-800 text-sm block">${s.user}</span><span class="text-[10px] text-slate-400">Versati personali: ${s.totalPaid.toFixed(2)}€</span></div>
+                                <span class="font-bold text-sm ${s.saldo >= 1.5 ? 'text-emerald-600' : s.saldo >= 0 ? 'text-amber-500' : 'text-rose-600'}">${s.saldo >= 0 ? '+' : ''}${s.saldo.toFixed(2)} €</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="card-white p-5 rounded-2xl space-y-4 shadow-sm border border-slate-200">
+                    <h3 class="font-bold text-sm text-slate-800 flex items-center gap-1.5"><span>👥</span> Gestione Colleghi</h3>
+                    <form onsubmit="handleAddUser(event)" class="space-y-2 text-xs">
+                        <span class="font-bold text-slate-600 block">Aggiungi Nuovo Partecipante:</span>
+                        <div class="flex gap-2">
+                            <input type="text" id="new-username" placeholder="Nome Collega" class="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required />
+                            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2.5 rounded-xl shadow transition">+ Aggiungi</button>
+                        </div>
+                    </form>
+                    <div class="border-t border-slate-100 pt-3 space-y-2 text-xs">
+                        <span class="font-bold text-slate-600 block">Rimuovi Collega:</span>
+                        <div class="space-y-1.5">
+                            ${state.users.map(u => `
+                                <div class="flex justify-between items-center p-2 bg-slate-50 rounded-xl border border-slate-200">
+                                    <span class="font-semibold text-slate-700">${u}</span>
+                                    <button onclick="handleRemoveUser('${u}')" class="text-rose-600 hover:text-rose-700 font-bold text-[11px] bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">Elimina</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSchedina() {
+            const ext = state.ultimaEstrazione;
+            let resultBox = '';
+            if (ext) {
+                const hits1 = state.schedina.p1.filter(n => ext.numeri.includes(n));
+                const hits2 = state.schedina.p2.filter(n => ext.numeri.includes(n));
+                resultBox = `
+                    <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3 mt-4 text-xs">
+                        <div class="flex justify-between font-bold text-slate-700"><span>Ultima Estrazione (${ext.data})</span><span class="text-blue-600">Esito Online</span></div>
+                        <div class="flex flex-wrap gap-1.5 items-center">
+                            ${ext.numeri.map(n => `<div class="ball ${(state.schedina.p1.includes(n)\vert{}\vert{}state.schedina.p2.includes(n)) ? 'ball-hit':'ball-drawn'}" style="width:28px;height:28px;font-size:0.75rem;">${n}</div>`).join('')}
+                            ${ext.superstar ? `<div class="ball ball-star" style="width:28px;height:28px;font-size:0.75rem;">${ext.superstar}</div>` : ''}
+                        </div>
+                        <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1 font-medium text-slate-700">
+                            <div>🎯 <strong>Pannello 1:</strong> ${hits1.length} numeri presi</div>
+                            <div>🎯 <strong>Pannello 2:</strong> ${hits2.length} numeri presi</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="card-white p-5 rounded-2xl space-y-5 shadow-sm">
+                    <div class="border-b border-slate-100 pb-2"><h2 class="font-bold text-xl text-slate-800">I Nostri Numeri Fissi</h2></div>
+                    <div><span class="text-xs font-bold text-slate-400 block mb-2">Pannello 1</span><div class="flex gap-2.5">${state.schedina.p1.map(n => `<div class="ball ball-main">${n}</div>`).join('')}<div class="ball ball-star">${state.schedina.star1}</div></div></div>
+                    <div><span class="text-xs font-bold text-slate-400 block mb-2">Pannello 2</span><div class="flex gap-2.5">${state.schedina.p2.map(n => `<div class="ball ball-main">${n}</div>`).join('')}<div class="ball ball-star">${state.schedina.star2}</div></div></div>
+                    <button onclick="controlloAutomatico()" id="btn-fetch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow text-xs flex items-center justify-center gap-2 mt-2"><span>🔄</span> Verifica Estrazione Ufficiale Online</button>
+                    ${resultBox}
+                </div>
+
+                <div class="card-white p-5 rounded-2xl space-y-3 shadow-sm border border-emerald-100">
+                    <h3 class="font-bold text-sm text-slate-800 flex items-center gap-1.5"><span>🏆</span> Registra Vincita in Cassa (Cassiere)</h3>
+                    <form onsubmit="handleRegistraVincita(event)" class="space-y-3 text-xs">
+                        <div><label class="text-slate-500 mb-1 block font-medium">Importo Vinto (€)</label><input type="number" step="0.50" id="vincita-importo" placeholder="Es. 10.00" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required /></div>
+                        <div><label class="text-slate-500 mb-1 block font-medium">PIN Cassiere</label><input type="password" id="vincita-pin" placeholder="PIN Segreto" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required /></div>
+                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl shadow transition">+ Aggiungi Vincita a Cassa</button>
+                    </form>
+                </div>
+
+                <div class="card-white rounded-2xl overflow-hidden shadow-sm space-y-2">
+                    <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-800">
+                        <span>📜 Archivio Giocate e Vincite (${state.estrazioni.length})</span>
+                    </div>
+                    <div class="divide-y divide-slate-100 text-xs">
+                        ${state.estrazioni.length === 0 ? '<div class="p-4 text-center text-slate-400">Nessuna giocata registrata finora.</div>' : state.estrazioni.slice().reverse().map(e => `
+                            <div class="p-3.5 space-y-1.5">
+                                <div class="flex justify-between items-center font-bold">
+                                    <span class="text-slate-700">Estrazione del ${e.data}</span>
+                                    <span class="${e.vincita > 0 ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 bg-slate-100'} px-2 py-0.5 rounded-md text-[11px]">${e.vincita > 0 ? `Vinti € ${e.vincita.toFixed(2)} 🎉` : 'Nessuna vincita'}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderVersamenti() {
+            return `
+                <div class="card-white p-5 rounded-2xl space-y-4 shadow-sm">
+                    <h2 class="font-bold text-lg text-slate-800">Registra Versamento</h2>
+                    <form onsubmit="handleVersamento(event)" class="space-y-3 text-xs">
+                        <div><label class="text-slate-500 mb-1 block font-medium">Seleziona Collega</label><select id="v-user" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required>${state.users.map(u => `<option value="${u}">${u}</option>`).join('')}</select></div>
+                        <div><label class="text-slate-500 mb-1 block font-medium">Importo (€)</label><input type="number" step="0.50" id="v-importo" placeholder="Importo (€)" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required /></div>
+                        <div><label class="text-slate-500 mb-1 block font-medium">Metodo di Pagamento</label><select id="v-metodo" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"><option>Contanti</option><option>PayPal</option><option>Satispay</option></select></div>
+                        <div><label class="text-slate-500 mb-1 block font-medium">PIN Cassiere</label><input type="password" id="v-pin" placeholder="PIN Segreto" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required /></div>
+                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow">Registra Ricarica</button>
+                    </form>
+                </div>
+
+                <div class="card-white rounded-2xl overflow-hidden shadow-sm">
+                    <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-800">
+                        <span>💳 Storico Versamenti</span>
+                        <span class="text-emerald-600">${state.versamenti.length} Operazioni</span>
+                    </div>
+                    <div class="divide-y divide-slate-100 text-xs">
+                        ${state.versamenti.length === 0 ? '<div class="p-4 text-center text-slate-400">Nessun versamento registrato.</div>' : state.versamenti.slice().reverse().map(v => `
+                            <div class="p-3.5 flex justify-between items-center">
+                                <div><span class="font-bold text-slate-800 text-sm block">${v.user}</span><span class="text-[10px] text-slate-400">${v.data} • Metodo: ${v.metodo || 'Contanti'}</span></div>
+                                <span class="font-black text-emerald-600 text-sm bg-emerald-50 px-2.5 py-1 rounded-lg">+ € ${parseFloat(v.importo).toFixed(2)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleAddUser(e) {
+            e.preventDefault();
+            const name = document.getElementById('new-username').value.trim();
+            if (!name || state.users.includes(name)) return;
+            state.users.push(name);
+            saveState();
+        }
+
+        function handleRemoveUser(userName) {
+            const pin = prompt('Inserisci il PIN Cassiere:');
+            if (pin !== state.pin) return alert('PIN Errato!');
+            state.users = state.users.filter(u => u !== userName);
+            saveState();
+        }
+
+        function handleRegistraVincita(e) {
+            e.preventDefault();
+            const pin = document.getElementById('vincita-pin').value;
+            if (pin !== state.pin) return alert('PIN Errato!');
+            const importo = parseFloat(document.getElementById('vincita-importo').value);
+            state.estrazioni.push({ id: Date.now(), data: new Date().toLocaleDateString('it-IT'), costo: 3.00, vincita: importo });
+            saveState();
+        }
+
+        function handleVersamento(e) {
+            e.preventDefault();
+            const pin = document.getElementById('v-pin').value;
+            if (pin !== state.pin) return alert('PIN Errato!');
+            const user = document.getElementById('v-user').value;
+            const importo = parseFloat(document.getElementById('v-importo').value);
+            const metodo = document.getElementById('v-metodo').value;
+            state.versamenti.push({ id: Date.now(), user, importo, data: new Date().toLocaleDateString('it-IT'), metodo });
+            saveState();
+        }
+
+        function handlePost(e) {
+            e.preventDefault();
+            const testo = document.getElementById('b-msg').value;
+            state.bacheca.unshift({ user: "Collega", testo, data: "Oggi" });
+            saveState();
+        }
+
+        async function controlloAutomatico() {
+            const btn = document.getElementById('btn-fetch');
+            if(btn) btn.innerText = "⏳ Controllo...";
+            try {
+                const res = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://superenalottooggi.com/superenalotto.json'));
+                if (res.ok) {
+                    const wrapper = await res.json();
+                    const data = JSON.parse(wrapper.contents);
+                    if (data && data.comb) {
+                        state.ultimaEstrazione = { data: data.data || new Date().toLocaleDateString('it-IT'), numeri: data.comb.map(Number), superstar: Number(data.star) || null };
+                        saveState();
+                        return;
+                    }
+                }
+            } catch (err) {}
+            if(btn) btn.innerText = "🔄 Riprova";
+            alert("Impossibile contattare il server.");
+        }
+
+        initDatabase();
+    </script>
+</body>
+</html>

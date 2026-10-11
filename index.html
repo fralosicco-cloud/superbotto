@@ -285,6 +285,7 @@
                         <div class="flex flex-wrap gap-1.5 items-center">
                             ${ext.numeri.map(n => `<div class="ball ${(state.schedina.p1.includes(n)||state.schedina.p2.includes(n)) ? 'ball-hit':'ball-drawn'}" style="width:28px;height:28px;font-size:0.75rem;">${n}</div>`).join('')}
                             ${ext.superstar ? `<div class="ball ball-star" style="width:28px;height:28px;font-size:0.75rem;">${ext.superstar}</div>` : ''}
+                            ${ext.jolly ? `<div class="ball ball-drawn" style="width:28px;height:28px;font-size:0.75rem;opacity:0.75;" title="Jolly">${ext.jolly}</div>` : ''}
                         </div>
                         <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1 font-medium text-slate-700">
                             <div>🎯 <strong>Pannello 1:</strong> ${hits1.length} numeri presi</div>
@@ -406,19 +407,25 @@
             const btn = document.getElementById('btn-fetch');
             if(btn) btn.innerText = "⏳ Controllo...";
             try {
-                const res = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://superenalottooggi.com/superenalotto.json'));
-                if (res.ok) {
-                    const wrapper = await res.json();
-                    const data = JSON.parse(wrapper.contents);
-                    if (data && data.comb) {
-                        state.ultimaEstrazione = { data: data.data || new Date().toLocaleDateString('it-IT'), numeri: data.comb.map(Number), superstar: Number(data.star) || null };
-                        saveState();
-                        return;
-                    }
+                const res = await fetch('/api/estrazione');
+                const data = await res.json();
+                if (res.ok && data && Array.isArray(data.estrazioni) && data.estrazioni.length > 0) {
+                    const est = data.estrazioni[0];
+                    state.ultimaEstrazione = {
+                        data: est.data,
+                        numeri: est.numeri,
+                        superstar: est.superstar,
+                        jolly: est.jolly
+                    };
+                    saveState();
+                    return;
                 }
-            } catch (err) {}
+                const msg = data && data.error ? data.error : "Nessun dato disponibile.";
+                alert("Verifica non riuscita: " + msg);
+            } catch (err) {
+                alert("Impossibile contattare il server di verifica.");
+            }
             if(btn) btn.innerText = "🔄 Riprova";
-            alert("Impossibile contattare il server.");
         }
 
         initDatabase();

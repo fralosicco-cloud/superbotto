@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SuperBotto 🍀</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#059669">
+    <meta name="description" content="Gestione condivisa delle giocate del SuperEnalotto del gruppo">
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SuperBotto">
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase JS Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -30,6 +39,12 @@
         .ball-star { background: linear-gradient(135deg, #F59E0B, #D97706); }
         .ball-drawn { background: linear-gradient(135deg, #3B82F6, #1D4ED8); }
         .ball-hit { background: linear-gradient(135deg, #EF4444, #B91C1C); border: 2px solid #FDE047; }
+        /* Solleva il badge Netlify (iframe iniettato) per non coprire la barra di navigazione in basso */
+        @media (max-width: 900px) {
+            #nl-badge-frame, #nl-hud-frame {
+                bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
+            }
+        }
     </style>
 </head>
 <body class="font-sans pb-24 bg-slate-100">
@@ -429,6 +444,15 @@
         }
 
         initDatabase();
+
+        // Registrazione Service Worker (necessaria per l'installazione come app)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(err => {
+                    console.error('Registrazione Service Worker fallita:', err);
+                });
+            });
+        }
     </script>
 </body>
 </html>

@@ -123,9 +123,9 @@
         function calculateMetrics() {
             const numUsers = state.users.length || 1;
             const costPerDraw = 3.00 / numUsers;
-            const totalDraws = state.estrazioni.length;
-            const totalSpesi = totalDraws * 3.00;
-            const totalCostPerUser = totalDraws * costPerDraw;
+            const totalDraws = state.estrazioni.filter(e => !e.programmata).length;
+            const totalSpesi = state.estrazioni.length * 3.00;
+            const totalCostPerUser = totalSpesi / numUsers;
 
             const totalVersato = state.versamenti.reduce((sum, v) => sum + (parseFloat(v.importo) || 0), 0);
             const totalVincite = state.estrazioni.reduce((sum, e) => sum + (parseFloat(e.vincita) || 0), 0);
@@ -199,7 +199,7 @@
                     </div>
                     <div class="card-white p-4 rounded-2xl flex flex-col justify-between h-32 relative shadow-sm">
                         <div class="flex justify-between items-start text-slate-500"><span class="text-xs font-bold uppercase">Giocate</span><span>📈</span></div>
-                        <div><div class="text-2xl font-black text-slate-800">${m.totalDraws}</div><div class="text-[11px] text-slate-400">estrazioni</div></div>
+                        <div><div class="text-2xl font-black text-slate-800">${m.totalDraws}</div><div class="text-[11px] text-slate-400">${state.estrazioni.some(e => e.programmata) ? 'giocate effettive' : 'estrazioni'}</div></div>
                     </div>
                     <div class="card-white p-4 rounded-2xl flex flex-col justify-between h-32 relative shadow-sm">
                         <div class="flex justify-between items-start text-slate-500"><span class="text-xs font-bold uppercase">Soldi spesi</span><span>💸</span></div>
@@ -321,8 +321,8 @@
                         ${state.estrazioni.length === 0 ? '<div class="p-4 text-center text-slate-400">Nessuna giocata registrata finora.</div>' : state.estrazioni.slice().reverse().map(e => `
                             <div class="p-3.5 space-y-1.5">
                                 <div class="flex justify-between items-center font-bold">
-                                    <span class="text-slate-700">Estrazione del ${e.data}</span>
-                                    <span class="${e.vincita > 0 ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 bg-slate-100'} px-2 py-0.5 rounded-md text-[11px]">${e.vincita > 0 ? `Vinti € ${e.vincita.toFixed(2)} 🎉` : 'Nessuna vincita'}</span>
+                                    <span class="text-slate-700">${e.programmata ? '⏳ Giocata programmata del ' : 'Estrazione del '}${e.data}</span>
+                                    <span class="${e.programmata ? 'text-blue-600 bg-blue-50' : e.vincita > 0 ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 bg-slate-100'} px-2 py-0.5 rounded-md text-[11px]">${e.programmata ? 'In programma • € 3.00' : e.vincita > 0 ? `Vinti € ${e.vincita.toFixed(2)} 🎉` : 'Nessuna vincita'}</span>
                                 </div>
                             </div>
                         `).join('')}

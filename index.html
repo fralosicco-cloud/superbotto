@@ -39,6 +39,7 @@
             <span class="text-xl">🍀</span>
         </div>
         <p class="text-xs text-emerald-100 mt-1 font-medium" id="header-subtitle">Caricamento dati...</p>
+        <div class="text-[10px] text-emerald-100 font-bold mt-1" id="header-utente"></div>
     </header>
 
     <main class="max-w-md mx-auto p-4 space-y-4" id="app-content">
@@ -60,6 +61,28 @@
         </button>
     </nav>
 
+    <div id="login-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] hidden items-center justify-center p-4">
+        <div class="card-white p-6 rounded-2xl w-full max-w-sm space-y-4 shadow-xl">
+            <div class="text-center space-y-1">
+                <div class="text-3xl">🍀</div>
+                <h2 class="font-black text-xl text-slate-800">Chi sei?</h2>
+                <p class="text-xs text-slate-400">Accedi con il tuo nome per essere riconosciuto in bacheca</p>
+            </div>
+            <form onsubmit="handleLogin(event)" class="space-y-3 text-xs">
+                <div>
+                    <label class="text-slate-500 mb-1 block font-medium">Il tuo nome</label>
+                    <select id="login-user" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required></select>
+                </div>
+                <div>
+                    <label class="text-slate-500 mb-1 block font-medium">Password del gruppo</label>
+                    <input type="password" id="login-pass" placeholder="Password" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required autocomplete="current-password" />
+                </div>
+                <div id="login-error" class="hidden text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2 text-center"></div>
+                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow transition">🍀 Entra</button>
+            </form>
+        </div>
+    </div>
+
     <script>
         const SUPABASE_URL = "https://utywytptssixgpoyddbb.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0eXd5dHB0c3NpeGdwb3lkZGJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MzUyMzAsImV4cCI6MjEwNzIxMTIzMH0.ZOcxwtsY_wl7BJTrsjSCI7ceb8AuqD6u1ZwROEI2YEc";
@@ -69,7 +92,7 @@
         let currentPage = 'bacheca';
         let state = {
             pin: "1234",
-            startDate: "2026-10-01", // Data inizio giocate del gruppo
+            startDate: "2026-10-08", // Data inizio giocate del gruppo
             users: ["Francesco", "Giovanni", "Franco", "Benny", "Beldo", "Beppe", "Disi", "Peps", "Massimo", "Igor"],
             schedina: { p1: [5, 12, 28, 41, 63, 88], star1: 15, p2: [9, 17, 33, 52, 70, 81], star2: 44 },
             versamenti: [],
@@ -78,30 +101,191 @@
             ultimaEstrazione: null
         };
 
-        // Genera automaticamente i giorni di estrazione (Martedì=2, Giovedì=4, Venerdì=5, Sabato=6)
+        // Dati delle giocate automatiche (gestiti dal server, NON salvati in Supabase)
+        let autoData = { caricato: false, attiva: true, periodi: [], estrazioni: [], aggiornataIl: null };
+        let lastAutoSnapshot = '';
+
+        // ---------- Sessione del partecipante ----------
+        let utente = null;
+        try { utente = localStorage.getItem('sb_utente') || null; } catch (err) {}
+
+        // ---------- Schedine: numeri, quantità (1-3) e costo ----------
+        const COSTO_SCHEDINA = 1.50; // 6 numeri + SuperStar
+        let editingSchedina = false;
+        let editor = null;
+
+        function numeroRandom() { return 1 + Math.floor(Math.random() * 90); }
+        function numeriRandom(giaUsati) {
+            const usati = new Set();
+            for (const p of (giaUsati || [])) for (const n of (p.numeri || [])) usati.add(n);
+            const numeri = [];
+            while (numeri.length < 6) {
+                const n = numeroRandom();
+                if (!numeri.includes(n) && !usati.has(n)) numeri.push(n);
+            }
+            return numeri;
+        }
+
+        function schedinaValida(e) {
+            return e && Array.isArray(e.schedine) && e.schedine.length > 0
+                && Number.isInteger(e.num) && e.num >= 1 && e.num <= 3
+                && (e.da === null || /^\d{4}-\d{2}-\d{2}$/.test(String(e.da)));
+        }
+
+        // Normalizza lo stato: la "storia schedine" sostituisce la vecchia schedina fissa.
+        // datiDb = oggetto stato appena caricato da Supabase (per riconoscere i dati legacy)
+        function normalizzaState(datiDb) {
+            const storiaValida = Array.isArray(state.schedinaStoria) && state.schedinaStoria.some(schedinaValida);
+            const legacyDaDb = datiDb && state.schedina && Array.isArray(state.schedina.p1) && !datiDb.schedinaStoria;
+            if (!storiaValida || legacyDaDb) {
+                const s = state.schedina || {};
+                const schedine = [];
+                if (Array.isArray(s.p1) && s.p1.length === 6) schedine.push({ numeri: s.p1.slice(), superstar: s.star1 != null ? Number(s.star1) : null });
+                if (Array.isArray(s.p2) && s.p2.length === 6) schedine.push({ numeri: s.p2.slice(), superstar: s.star2 != null ? Number(s.star2) : null });
+                while (schedine.length < 2) schedine.push({ numeri: numeriRandom(schedine), superstar: numeroRandom() });
+                state.schedinaStoria = [{ da: null, num: 2, schedine }];
+            } else {
+                state.schedinaStoria = state.schedinaStoria.filter(schedinaValida);
+            }
+            delete state.schedina;
+            state.schedinaStoria.sort((a, b) => (a.da === null ? -1 : b.da === null ? 1 : String(a.da).localeCompare(String(b.da))));
+        }
+
+        // Configurazione schedina in vigore alla data iso (la prima voce ha da=null = dall'inizio)
+        function configSchedinaA(iso) {
+            const storia = Array.isArray(state.schedinaStoria) ? state.schedinaStoria : [];
+            let cfg = storia.find(e => e.da === null) || storia[0];
+            for (const e of storia) { if (e.da !== null && e.da <= iso) cfg = e; }
+            return cfg;
+        }
+        function schedinaCorrente() { return configSchedinaA(romeNowInfo().iso); }
+        function schedineAttiveA(iso) {
+            const c = configSchedinaA(iso);
+            return ((c && c.schedine) || []).slice(0, (c && c.num) || 2);
+        }
+        function numeriSchedinaA(iso) {
+            return schedineAttiveA(iso).flatMap(p => p.numeri || []);
+        }
+        normalizzaState();
+
+        // ---------- Utilità date (fuso Europe/Rome) ----------
+        function romeNowInfo() {
+            const parts = {};
+            const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+            for (const p of fmt.formatToParts(new Date())) {
+                if (p.type !== 'literal') parts[p.type] = p.value;
+            }
+            return { iso: `${parts.year}-${parts.month}-${parts.day}`, hhmm: `${parts.hour}:${parts.minute}` };
+        }
+        function shiftISO(iso, days) {
+            const d = new Date(iso + 'T12:00:00Z');
+            d.setUTCDate(d.getUTCDate() + days);
+            return d.toISOString().slice(0, 10);
+        }
+        function isoToIt(iso) {
+            const p = iso.split('-');
+            return `${Number(p[2])}/${Number(p[1])}/${p[0]}`;
+        }
+        function itToISO(data) {
+            const m = data.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (!m) return null;
+            return `${m[3]}-${String(Number(m[2])).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`;
+        }
+        function weekdayOfISO(iso) {
+            return new Date(iso + 'T12:00:00Z').getUTCDay();
+        }
+        const GIORNI_ESTRAZIONE = [2, 4, 5, 6]; // Martedì, Giovedì, Venerdì, Sabato
+
+        // Carica lo stato delle giocate automatiche dal server e ricarica la pagina se cambiato
+        async function loadAuto() {
+            try {
+                const res = await fetch('/api/estrazioni-auto', { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                autoData = {
+                    caricato: true,
+                    attiva: !!data.attiva,
+                    periodi: Array.isArray(data.periodi) ? data.periodi : [],
+                    estrazioni: Array.isArray(data.estrazioni) ? data.estrazioni : [],
+                    aggiornataIl: data.aggiornataIl || null
+                };
+                const snap = JSON.stringify([autoData.attiva, autoData.periodi, autoData.estrazioni.length, autoData.estrazioni[0] && autoData.estrazioni[0].data]);
+                if (snap !== lastAutoSnapshot) {
+                    renderCurrentPage();
+                }
+                lastAutoSnapshot = snap;
+            } catch (err) { /* Riproverà al prossimo controllo */ }
+        }
+        setInterval(loadAuto, 60000);
+
+        // Ultima estrazione nota: la più recente tra quella registrata automaticamente e quella manuale
+        function getUltimaEstrazione() {
+            const auto = (autoData.estrazioni || [])[0] || null;
+            const manuale = state.ultimaEstrazione || null;
+            if (auto && manuale) {
+                const a = itToISO(auto.data), m = itToISO(manuale.data);
+                if (a && m) return a >= m ? auto : manuale;
+            }
+            return auto || manuale;
+        }
+
+        // Prossimo aggiornamento automatico programmato (21:00 del prossimo giorno di estrazione)
+        function prossimoAggiornamento() {
+            if (!autoData.caricato || !autoData.attiva) return null;
+            const now = romeNowInfo();
+            for (let i = 0; i < 9; i++) {
+                const iso = shiftISO(now.iso, i);
+                if (!GIORNI_ESTRAZIONE.includes(weekdayOfISO(iso))) continue;
+                if (i === 0 && now.hhmm >= '21:00') continue;
+                return { iso, testo: `${isoToIt(iso)} alle 21:00` };
+            }
+            return null;
+        }
+
+        // Genera automaticamente i giorni di estrazione (Martedì=2, Giovedì=4, Venerdì=5, Sabato=6),
+        // limitati ai periodi in cui le giocate automatiche sono attive
         function getAutomaticDraws() {
             const draws = [];
-            const start = new Date(state.startDate || "2026-10-01");
-            const today = new Date();
-            let current = new Date(start);
+            const seen = new Set();
+            const startISO = state.startDate || "2026-10-01";
+            const oggiISO = romeNowInfo().iso;
 
-            while (current <= today) {
-                const day = current.getDay();
-                // 2 = Martedì, 4 = Giovedì, 5 = Venerdì, 6 = Sabato
-                if ([2, 4, 5, 6].includes(day)) {
-                    const dateStr = current.toLocaleDateString('it-IT');
-                    // Cerca se esiste una vincita o esito registrato per questa data
-                    const custom = (state.estrazioniManual || []).find(e => e.data === dateStr);
-                    draws.push({
-                        id: current.getTime(),
-                        data: dateStr,
-                        costo: 3.00,
-                        vincita: custom ? custom.vincita : 0,
-                        numeri: custom ? custom.numeri : null,
-                        superstar: custom ? custom.superstar : null
-                    });
+            let segmenti = [];
+            if (autoData.caricato && autoData.periodi.length > 0) {
+                for (const p of autoData.periodi) {
+                    const da = p.da || startISO;
+                    const al = p.al || oggiISO;
+                    if (da <= al) segmenti.push({ da, al });
                 }
-                current.setDate(current.getDate() + 1);
+            } else {
+                // Dati automatici non ancora caricati: comportamento precedente
+                segmenti.push({ da: startISO, al: oggiISO });
+            }
+
+            for (const seg of segmenti) {
+                const t = new Date(seg.da + 'T12:00:00Z');
+                const end = new Date(seg.al + 'T12:00:00Z');
+                while (t <= end) {
+                    const iso = t.toISOString().slice(0, 10);
+                    if (GIORNI_ESTRAZIONE.includes(t.getUTCDay()) && !seen.has(iso)) {
+                        seen.add(iso);
+                        const dataIt = isoToIt(iso);
+                        // Cerca se esiste una vincita o esito registrato per questa data
+                        const custom = (state.estrazioniManual || []).find(e => e.data === dataIt);
+                        const online = (autoData.estrazioni || []).find(e => e.data === dataIt);
+                        const cfgSchedina = configSchedinaA(iso);
+                        draws.push({
+                            id: t.getTime(),
+                            data: dataIt,
+                            iso,
+                            costo: ((cfgSchedina && cfgSchedina.num) || 2) * COSTO_SCHEDINA,
+                            vincita: custom ? custom.vincita : 0,
+                            numeri: custom && custom.numeri ? custom.numeri : (online ? online.numeri : null),
+                            superstar: custom && custom.superstar != null ? custom.superstar : (online ? online.superstar : null)
+                        });
+                    }
+                    t.setUTCDate(t.getUTCDate() + 1);
+                }
             }
             return draws;
         }
@@ -115,6 +299,8 @@
 
             if (data && data.data) {
                 state = { ...state, ...data.data };
+                normalizzaState(data.data);
+                verificaSessione();
                 renderCurrentPage();
             } else if (error) {
                 console.error("Errore caricamento da Supabase:", error);
@@ -125,6 +311,8 @@
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_state' }, payload => {
                     if (payload.new && payload.new.data) {
                         state = { ...state, ...payload.new.data };
+                        normalizzaState(payload.new.data);
+                        verificaSessione();
                         renderCurrentPage();
                     }
                 })
@@ -147,10 +335,14 @@
         function calculateMetrics() {
             const allDraws = getAutomaticDraws();
             const numUsers = state.users.length || 1;
-            const costPerDraw = 3.00 / numUsers;
             const totalDraws = allDraws.length;
-            const totalSpesi = totalDraws * 3.00;
-            const totalCostPerUser = totalDraws * costPerDraw;
+            const totalSpesi = allDraws.reduce((sum, e) => sum + (parseFloat(e.costo) || 0), 0);
+            const totalCostPerUser = totalSpesi / numUsers;
+
+            const corrente = schedinaCorrente();
+            const numSchedine = (corrente && corrente.num) || 2;
+            const costoEstrazione = numSchedine * COSTO_SCHEDINA;
+            const costPerDraw = costoEstrazione / numUsers;
 
             const totalVersato = state.versamenti.reduce((sum, v) => sum + (parseFloat(v.importo) || 0), 0);
             const totalVincite = allDraws.reduce((sum, e) => sum + (parseFloat(e.vincita) || 0), 0);
@@ -174,6 +366,8 @@
                 totalDraws,
                 totalSpesi,
                 numUsers,
+                numSchedine,
+                costoEstrazione,
                 costPerDraw,
                 saldi,
                 allDraws
@@ -184,7 +378,13 @@
             const m = calculateMetrics();
             const sub = document.getElementById('header-subtitle');
             if (sub) {
-                sub.innerText = `${m.numUsers} Colleghi • 2 Pannelli • ${m.costPerDraw.toFixed(2)}€ ad estrazione`;
+                sub.innerText = `${m.numUsers} Colleghi • ${m.numSchedine} Schedine • ${m.costPerDraw.toFixed(2)}€ ad estrazione`;
+            }
+            const uh = document.getElementById('header-utente');
+            if (uh) {
+                uh.innerHTML = utente
+                    ? `Ciao, <strong>${utente}</strong> · <span onclick="esciLogin()" class="underline cursor-pointer opacity-80 hover:opacity-100">esci</span>`
+                    : '';
             }
         }
 
@@ -242,7 +442,7 @@
                     <div class="space-y-2 pt-1">
                         ${state.bacheca.length === 0 ? '<div class="text-center text-xs text-slate-400 py-2">Nessun messaggio in bacheca</div>' : state.bacheca.map(b => `
                             <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
-                                <div class="flex justify-between text-[11px] text-slate-400 font-bold"><span>${b.user}</span><span>${b.data}</span></div>
+                                <div class="flex justify-between text-[11px] font-bold"><span class="${state.users.includes(b.user) ? 'text-emerald-600' : 'text-slate-400'}">${b.user}</span><span class="text-slate-400 font-medium">${b.data}</span></div>
                                 <div class="text-slate-700 leading-relaxed">${b.testo}</div>
                             </div>
                         `).join('')}
@@ -301,34 +501,53 @@
 
         function renderSchedina() {
             const m = calculateMetrics();
-            const ext = state.ultimaEstrazione;
-            let resultBox = '';
-            if (ext) {
-                const hits1 = state.schedina.p1.filter(n => ext.numeri.includes(n));
-                const hits2 = state.schedina.p2.filter(n => ext.numeri.includes(n));
-                resultBox = `
-                    <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3 mt-4 text-xs">
-                        <div class="flex justify-between font-bold text-slate-700"><span>Ultima Estrazione (${ext.data})</span><span class="text-blue-600">Esito Online</span></div>
-                        <div class="flex flex-wrap gap-1.5 items-center">
-                            ${ext.numeri.map(n => `<div class="ball ${(state.schedina.p1.includes(n)\vert{}\vert{}state.schedina.p2.includes(n)) ? 'ball-hit':'ball-drawn'}" style="width:28px;height:28px;font-size:0.75rem;">${n}</div>`).join('')}
-                            ${ext.superstar ? `<div class="ball ball-star" style="width:28px;height:28px;font-size:0.75rem;">${ext.superstar}</div>` : ''}
+            const inEditoria = editingSchedina && editor;
+            const ext = getUltimaEstrazione();
+
+            let numeriCard;
+            if (inEditoria) {
+                numeriCard = renderEditorSchedina();
+            } else {
+                let resultBox = '';
+                if (ext) {
+                    const isoDraw = itToISO(ext.data) || romeNowInfo().iso;
+                    const attive = schedineAttiveA(isoDraw);
+                    const tutti = attive.flatMap(p => p.numeri || []);
+                    resultBox = `
+                        <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3 mt-4 text-xs">
+                            <div class="flex justify-between font-bold text-slate-700"><span>Ultima Estrazione (${ext.data})</span><span class="text-blue-600">Esito Online</span></div>
+                            <div class="flex flex-wrap gap-1.5 items-center">
+                                ${ext.numeri.map(n => `<div class="ball ${tutti.includes(n) ? 'ball-hit':'ball-drawn'}" style="width:28px;height:28px;font-size:0.75rem;">${n}</div>`).join('')}
+                                ${ext.superstar ? `<div class="ball ball-star" style="width:28px;height:28px;font-size:0.75rem;">${ext.superstar}</div>` : ''}
+                            </div>
+                            <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1 font-medium text-slate-700">
+                                ${attive.map((p, i) => `<div>🎯 <strong>Schedina ${i + 1}:</strong> ${(p.numeri || []).filter(n => ext.numeri.includes(n)).length} numeri presi</div>`).join('')}
+                            </div>
                         </div>
-                        <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1 font-medium text-slate-700">
-                            <div>🎯 <strong>Pannello 1:</strong> ${hits1.length} numeri presi</div>
-                            <div>🎯 <strong>Pannello 2:</strong> ${hits2.length} numeri presi</div>
+                    `;
+                }
+                const corrente = schedinaCorrente();
+                const schedine = (corrente.schedine || []).slice(0, corrente.num || 2);
+                numeriCard = `
+                    <div class="card-white p-5 rounded-2xl space-y-5 shadow-sm">
+                        <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                            <h2 class="font-bold text-xl text-slate-800">Le Nostre Schedine</h2>
+                            <button onclick="apriEditorSchedina()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-bold text-[11px] px-3 py-1.5 rounded-lg transition">✏️ Modifica</button>
                         </div>
+                        ${schedine.map((p, i) => `
+                            <div><span class="text-xs font-bold text-slate-400 block mb-2">Schedina ${i + 1}</span><div class="flex gap-2.5 flex-wrap">${(p.numeri || []).map(n => `<div class="ball ball-main">${n}</div>`).join('')}<div class="ball ball-star">${p.superstar != null ? p.superstar : '·'}</div></div></div>
+                        `).join('')}
+                        <div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl p-2.5">💶 Costo: <strong>${m.numSchedine} × 1,50€ = ${m.costoEstrazione.toFixed(2).replace('.', ',')}€</strong> ad estrazione</div>
+                        <button onclick="controlloAutomatico()" id="btn-fetch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow text-xs flex items-center justify-center gap-2 mt-2"><span>🔄</span> Verifica Estrazione Ufficiale Online</button>
+                        ${resultBox}
                     </div>
                 `;
             }
 
             return `
-                <div class="card-white p-5 rounded-2xl space-y-5 shadow-sm">
-                    <div class="border-b border-slate-100 pb-2"><h2 class="font-bold text-xl text-slate-800">I Nostri Numeri Fissi</h2></div>
-                    <div><span class="text-xs font-bold text-slate-400 block mb-2">Pannello 1</span><div class="flex gap-2.5">${state.schedina.p1.map(n => `<div class="ball ball-main">${n}</div>`).join('')}<div class="ball ball-star">${state.schedina.star1}</div></div></div>
-                    <div><span class="text-xs font-bold text-slate-400 block mb-2">Pannello 2</span><div class="flex gap-2.5">${state.schedina.p2.map(n => `<div class="ball ball-main">${n}</div>`).join('')}<div class="ball ball-star">${state.schedina.star2}</div></div></div>
-                    <button onclick="controlloAutomatico()" id="btn-fetch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow text-xs flex items-center justify-center gap-2 mt-2"><span>🔄</span> Verifica Estrazione Ufficiale Online</button>
-                    ${resultBox}
-                </div>
+                ${numeriCard}
+
+                ${renderAutoGiocateCard()}
 
                 <div class="card-white p-5 rounded-2xl space-y-3 shadow-sm border border-emerald-100">
                     <h3 class="font-bold text-sm text-slate-800 flex items-center gap-1.5"><span>🏆</span> Registra Vincita in Cassa (Cassiere)</h3>
@@ -344,17 +563,125 @@
                         <span>📜 Archivio Giocate e Estrazioni (${m.allDraws.length})</span>
                     </div>
                     <div class="divide-y divide-slate-100 text-xs">
-                        ${m.allDraws.length === 0 ? '<div class="p-4 text-center text-slate-400">Nessuna giocata accumulata finora.</div>' : m.allDraws.slice().reverse().map(e => `
+                        ${m.allDraws.length === 0 ? '<div class="p-4 text-center text-slate-400">Nessuna giocata accumulata finora.</div>' : m.allDraws.slice().reverse().map(e => {
+                            const giocati = numeriSchedinaA(e.iso);
+                            return `
                             <div class="p-3.5 space-y-1.5">
                                 <div class="flex justify-between items-center font-bold">
                                     <span class="text-slate-700">Estrazione del ${e.data}</span>
-                                    <span class="${e.vincita > 0 ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 bg-slate-100'} px-2 py-0.5 rounded-md text-[11px]">${e.vincita > 0 ? `Vinti € ${e.vincita.toFixed(2)} 🎉` : 'Giocata registrata (3,00€)'}</span>
+                                    <span class="${e.vincita > 0 ? 'text-emerald-600 bg-emerald-50' : e.numeri ? 'text-blue-600 bg-blue-50' : 'text-slate-400 bg-slate-100'} px-2 py-0.5 rounded-md text-[11px]">${e.vincita > 0 ? `Vinti € ${e.vincita.toFixed(2)} 🎉` : e.numeri ? 'Esito aggiornato ✓' : `Giocata registrata (${e.costo.toFixed(2).replace('.', ',')}€)`}</span>
                                 </div>
+                                ${e.numeri ? `
+                                <div class="flex flex-wrap gap-1 pt-0.5">
+                                    ${e.numeri.map(n => `<div class="ball ball-sm ${giocati.includes(n) ? 'ball-hit' : 'ball-drawn'}">${n}</div>`).join('')}
+                                    ${e.superstar ? `<div class="ball ball-sm ball-star">${e.superstar}</div>` : ''}
+                                </div>` : ''}
                             </div>
-                        `).join('')}
+                        `; }).join('')}
                     </div>
                 </div>
             `;
+        }
+
+        // ---------- Editor schedine (riservato al Cassiere) ----------
+        function apriEditorSchedina() {
+            const pin = prompt('Inserisci il PIN Cassiere:');
+            if (pin === null) return;
+            if (pin !== state.pin) return alert('PIN Errato!');
+            const corrente = schedinaCorrente();
+            editor = {
+                num: corrente.num || 2,
+                schedine: (corrente.schedine || []).map(p => ({ numeri: [...(p.numeri || [])], superstar: p.superstar }))
+            };
+            editingSchedina = true;
+            renderCurrentPage();
+        }
+
+        function annullaEditorSchedina() {
+            editingSchedina = false;
+            editor = null;
+            renderCurrentPage();
+        }
+
+        function editorNum(n) {
+            if (!editor) return;
+            editor.num = n;
+            while (editor.schedine.length < n) {
+                editor.schedine.push({ numeri: numeriRandom(editor.schedine), superstar: numeroRandom() });
+            }
+            renderCurrentPage();
+        }
+
+        function editorAggiorna(i, j, valore) {
+            if (!editor || !editor.schedine[i]) return;
+            const n = parseInt(valore, 10);
+            editor.schedine[i].numeri[j] = isNaN(n) ? null : n;
+        }
+
+        function editorAggiornaStar(i, valore) {
+            if (!editor || !editor.schedine[i]) return;
+            const n = parseInt(valore, 10);
+            editor.schedine[i].superstar = isNaN(n) ? null : n;
+        }
+
+        function renderEditorSchedina() {
+            const totale = (editor.num * COSTO_SCHEDINA).toFixed(2).replace('.', ',');
+            const btnNum = n => `<button onclick="editorNum(${n})" class="flex-1 font-bold py-2.5 rounded-xl border transition text-sm ${editor.num === n ? 'bg-emerald-600 text-white border-emerald-600 shadow' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}">${n}</button>`;
+            const pannelli = [];
+            for (let i = 0; i < editor.num; i++) {
+                const p = editor.schedine[i] || { numeri: [], superstar: null };
+                pannelli.push(`
+                    <div class="space-y-2">
+                        <span class="text-xs font-bold text-slate-400 block">Schedina ${i + 1}</span>
+                        <div class="grid grid-cols-7 gap-1.5">
+                            ${p.numeri.map((n, j) => `<input type="number" min="1" max="90" inputmode="numeric" value="${n != null ? n : ''}" oninput="editorAggiorna(${i}, ${j}, this.value)" class="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-center text-slate-800 font-bold text-sm" />`).join('')}
+                            <input type="number" min="1" max="90" inputmode="numeric" value="${p.superstar != null ? p.superstar : ''}" oninput="editorAggiornaStar(${i}, this.value)" class="w-full p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-center text-slate-800 font-bold text-sm" />
+                        </div>
+                    </div>
+                `);
+            }
+            return `
+                <div class="card-white p-5 rounded-2xl space-y-4 shadow-sm border border-emerald-200">
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                        <h2 class="font-bold text-xl text-slate-800">✏️ Modifica Schedine</h2>
+                        <span class="text-[10px] text-slate-400 font-bold uppercase">Cassiere</span>
+                    </div>
+                    <div class="space-y-2">
+                        <span class="text-xs font-bold text-slate-500 block">Quante schedine giocare? <span class="text-slate-400 font-medium">(1,50€ ciascuna)</span></span>
+                        <div class="flex gap-2">${[1, 2, 3].map(btnNum).join('')}</div>
+                    </div>
+                    ${pannelli.join('')}
+                    <div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl p-2.5">💶 Totale: <strong>${editor.num} × 1,50€ = ${totale}€</strong> ad estrazione</div>
+                    <div class="text-[10px] text-slate-400">Le modifiche valgono dalla prossima estrazione: se fatte dopo le 20:30, dalla giocata successiva.</div>
+                    <div class="flex gap-2">
+                        <button onclick="salvaEditorSchedina()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl shadow transition text-xs">💾 Salva modifiche</button>
+                        <button onclick="annullaEditorSchedina()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 px-4 rounded-xl border border-slate-200 transition text-xs">Annulla</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function salvaEditorSchedina() {
+            if (!editor) return;
+            for (let i = 0; i < editor.num; i++) {
+                const p = editor.schedine[i] || { numeri: [], superstar: null };
+                const numeri = p.numeri || [];
+                const numeriOk = numeri.length === 6 && numeri.every(n => Number.isInteger(n) && n >= 1 && n <= 90) && new Set(numeri).size === 6;
+                if (!numeriOk) return alert(`La schedina ${i + 1} deve contenere 6 numeri diversi compresi tra 1 e 90.`);
+                if (!(Number.isInteger(p.superstar) && p.superstar >= 1 && p.superstar <= 90)) return alert(`Il numero SuperStar della schedina ${i + 1} deve essere compreso tra 1 e 90.`);
+            }
+            const ora = romeNowInfo();
+            const da = ora.hhmm >= '20:30' ? shiftISO(ora.iso, 1) : ora.iso;
+            state.schedinaStoria = state.schedinaStoria.filter(e => e.da !== da);
+            state.schedinaStoria.push({
+                da,
+                num: editor.num,
+                schedine: editor.schedine.map(p => ({ numeri: [...p.numeri], superstar: p.superstar }))
+            });
+            state.schedinaStoria.sort((a, b) => (a.da === null ? -1 : b.da === null ? 1 : String(a.da).localeCompare(String(b.da))));
+            editingSchedina = false;
+            editor = null;
+            saveState();
         }
 
         function renderVersamenti() {
@@ -425,31 +752,175 @@
 
         function handlePost(e) {
             e.preventDefault();
+            if (!utente) { apriLogin(); return; }
             const testo = document.getElementById('b-msg').value;
-            state.bacheca.unshift({ user: "Collega", testo, data: "Oggi" });
+            state.bacheca.unshift({ user: utente, testo, data: new Date().toLocaleDateString('it-IT') });
             saveState();
+        }
+
+        // ---------- Accesso partecipanti ----------
+        function apriLogin() {
+            const sel = document.getElementById('login-user');
+            if (sel) {
+                const precedente = sel.value;
+                sel.innerHTML = state.users.map(u => `<option value="${u}">${u}</option>`).join('');
+                if (precedente && state.users.includes(precedente)) sel.value = precedente;
+            }
+            const ov = document.getElementById('login-overlay');
+            if (ov) { ov.classList.remove('hidden'); ov.classList.add('flex'); }
+        }
+
+        function chiudiOverlayLogin() {
+            const ov = document.getElementById('login-overlay');
+            if (ov) { ov.classList.add('hidden'); ov.classList.remove('flex'); }
+            const pass = document.getElementById('login-pass');
+            if (pass) pass.value = '';
+            const err = document.getElementById('login-error');
+            if (err) err.classList.add('hidden');
+        }
+
+        function verificaSessione() {
+            if (utente && !state.users.includes(utente)) {
+                // Il partecipante è stato rimosso dal gruppo: sessione non più valida
+                utente = null;
+                try { localStorage.removeItem('sb_utente'); } catch (err) {}
+            }
+            if (utente) {
+                chiudiOverlayLogin();
+            } else {
+                apriLogin();
+            }
+        }
+
+        function esciLogin() {
+            utente = null;
+            try { localStorage.removeItem('sb_utente'); } catch (err) {}
+            verificaSessione();
+            renderCurrentPage();
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const nome = document.getElementById('login-user').value;
+            const password = document.getElementById('login-pass').value;
+            const errBox = document.getElementById('login-error');
+            const btn = e.target.querySelector('button[type="submit"]');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Accesso...'; }
+            if (errBox) errBox.classList.add('hidden');
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nome, password })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.ok) {
+                    utente = nome;
+                    try { localStorage.setItem('sb_utente', nome); } catch (err) {}
+                    chiudiOverlayLogin();
+                    renderCurrentPage();
+                    return;
+                }
+                if (errBox) {
+                    errBox.textContent = data.error || 'Accesso non riuscito.';
+                    errBox.classList.remove('hidden');
+                }
+            } catch (err) {
+                if (errBox) {
+                    errBox.textContent = 'Impossibile contattare il server. Riprova.';
+                    errBox.classList.remove('hidden');
+                }
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '🍀 Entra'; }
+            }
         }
 
         async function controlloAutomatico() {
             const btn = document.getElementById('btn-fetch');
             if(btn) btn.innerText = "⏳ Controllo...";
             try {
-                const res = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://superenalottooggi.com/superenalotto.json'));
+                const res = await fetch('/api/estrazione');
                 if (res.ok) {
-                    const wrapper = await res.json();
-                    const data = JSON.parse(wrapper.contents);
-                    if (data && data.comb) {
-                        state.ultimaEstrazione = { data: data.data || new Date().toLocaleDateString('it-IT'), numeri: data.comb.map(Number), superstar: Number(data.star) || null };
+                    const data = await res.json();
+                    const e = data.estrazioni && data.estrazioni[0];
+                    if (e && e.numeri && e.numeri.length >= 6) {
+                        state.ultimaEstrazione = { data: e.data, numeri: e.numeri.map(Number), superstar: e.superstar != null ? Number(e.superstar) : null };
                         saveState();
+                        loadAuto();
                         return;
                     }
                 }
             } catch (err) {}
             if(btn) btn.innerText = "🔄 Riprova";
-            alert("Impossibile contattare il server.");
+            alert("Impossibile controllare l'estrazione online. Riprova tra poco.");
+        }
+
+        // Ferma o riattiva le giocate automatiche (richiede PIN Cassiere)
+        async function toggleAutoGiocate(attiva) {
+            const pin = prompt('Inserisci il PIN Cassiere:');
+            if (pin === null) return;
+            if (pin !== state.pin) return alert('PIN Errato!');
+            try {
+                const res = await fetch('/api/estrazioni-auto', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ attiva })
+                });
+                if (!res.ok) throw new Error('errore server');
+                const data = await res.json();
+                autoData = {
+                    caricato: true,
+                    attiva: !!data.attiva,
+                    periodi: Array.isArray(data.periodi) ? data.periodi : [],
+                    estrazioni: Array.isArray(data.estrazioni) ? data.estrazioni : [],
+                    aggiornataIl: data.aggiornataIl || null
+                };
+                lastAutoSnapshot = JSON.stringify([autoData.attiva, autoData.periodi, autoData.estrazioni.length, autoData.estrazioni[0] && autoData.estrazioni[0].data]);
+                renderCurrentPage();
+            } catch (err) {
+                alert("Impossibile aggiornare le giocate automatiche. Riprova.");
+            }
+        }
+
+        function renderAutoGiocateCard() {
+            const caricato = autoData.caricato;
+            const attiva = caricato ? autoData.attiva : true;
+            const ultimo = (autoData.estrazioni || [])[0];
+            const prossimo = prossimoAggiornamento();
+
+            let statoHtml, bottoneHtml;
+            if (!caricato) {
+                statoHtml = '<span class="text-slate-400 font-black">CARICAMENTO...</span>';
+                bottoneHtml = '';
+            } else if (attiva) {
+                statoHtml = '<span class="text-emerald-600 font-black">ATTIVE</span> 🟢';
+                bottoneHtml = '<button onclick="toggleAutoGiocate(false)" class="w-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-2.5 rounded-xl shadow-sm transition text-xs">⏸ Ferma le giocate automatiche</button>';
+            } else {
+                statoHtml = '<span class="text-rose-600 font-black">FERMATE</span> 🔴';
+                bottoneHtml = '<button onclick="toggleAutoGiocate(true)" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl shadow transition text-xs">▶️ Riattiva le giocate automatiche</button>';
+            }
+
+            return `
+                <div class="card-white p-5 rounded-2xl space-y-3 shadow-sm border border-blue-100">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-bold text-sm text-slate-800 flex items-center gap-1.5"><span>⚙️</span> Giocate Automatiche</h3>
+                        ${statoHtml}
+                    </div>
+                    <div class="text-xs text-slate-600 space-y-1.5 leading-relaxed">
+                        <div class="flex items-start gap-2"><span>🗓️</span><span>Aggiornamento automatico dei risultati: <strong>martedì, giovedì, venerdì e sabato alle 21:00</strong>.</span></div>
+                        ${attiva && prossimo ? `<div class="flex items-start gap-2"><span>⏰</span><span>Prossimo aggiornamento: <strong>${prossimo.testo}</strong></span></div>` : ''}
+                        ${ultimo ? `<div class="flex items-start gap-2"><span>✅</span><span>Ultimo risultato registrato: <strong>${ultimo.data}</strong></span></div>` : ''}
+                        ${!attiva ? '<div class="text-rose-500 bg-rose-50 border border-rose-100 rounded-lg p-2">Le giocate sono sospese: nessuna nuova estrazione viene conteggiata in cassa.</div>' : ''}
+                    </div>
+                    ${bottoneHtml}
+                    <div class="text-[10px] text-slate-400">Fermare prima delle 20:30 esclude dal conteggio la giocata di quella sera.</div>
+                </div>
+            `;
         }
 
         initDatabase();
+        loadAuto();
+        verificaSessione();
     </script>
 </body>
 </html>

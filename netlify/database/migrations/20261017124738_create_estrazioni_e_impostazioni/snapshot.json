@@ -1,0 +1,197 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "3ac852ed-71ea-4a23-a815-f2eee000a28a",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "estrazioni",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "impostazioni",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "serial",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "data",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "numeri",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "superstar",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "jolly",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'automatica'",
+      "generated": null,
+      "identity": null,
+      "name": "fonte",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "creata_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "impostazioni"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "true",
+      "generated": null,
+      "identity": null,
+      "name": "attiva",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "impostazioni"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "periodi",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "impostazioni"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "aggiornata_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "impostazioni"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "estrazioni_pkey",
+      "schema": "public",
+      "table": "estrazioni",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "impostazioni_pkey",
+      "schema": "public",
+      "table": "impostazioni",
+      "entityType": "pks"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "data"
+      ],
+      "nullsNotDistinct": false,
+      "name": "estrazioni_data_key",
+      "schema": "public",
+      "table": "estrazioni",
+      "entityType": "uniques"
+    }
+  ],
+  "renames": []
+}

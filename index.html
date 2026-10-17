@@ -2,8 +2,17 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>SuperBotto 🍀</title>
+    <meta name="description" content="Gestione condivisa delle giocate del SuperEnalotto del gruppo">
+    <meta name="theme-color" content="#059669">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SuperBotto">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -29,6 +38,8 @@
         .ball-star { background: linear-gradient(135deg, #F59E0B, #D97706); }
         .ball-drawn { background: linear-gradient(135deg, #3B82F6, #1D4ED8); }
         .ball-hit { background: linear-gradient(135deg, #EF4444, #B91C1C); border: 2px solid #FDE047; }
+        header { padding-top: calc(1rem + env(safe-area-inset-top)) !important; }
+        nav { padding-bottom: calc(0.625rem + env(safe-area-inset-bottom)) !important; }
     </style>
 </head>
 <body class="font-sans pb-24 bg-slate-100">
@@ -921,6 +932,13 @@
         initDatabase();
         loadAuto();
         verificaSessione();
+
+        // PWA: registra il service worker per funzionare come app installata (anche offline)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(() => {});
+            });
+        }
     </script>
 </body>
 </html>

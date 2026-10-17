@@ -4,17 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SuperBotto 🍀</title>
-    <link rel="manifest" href="/manifest.webmanifest">
-    <meta name="theme-color" content="#059669">
-    <meta name="description" content="Gestione condivisa delle giocate del SuperEnalotto del gruppo">
-    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="SuperBotto">
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Supabase JS Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { background-color: #f8fafc; color: #1e293b; }
@@ -39,17 +29,10 @@
         .ball-star { background: linear-gradient(135deg, #F59E0B, #D97706); }
         .ball-drawn { background: linear-gradient(135deg, #3B82F6, #1D4ED8); }
         .ball-hit { background: linear-gradient(135deg, #EF4444, #B91C1C); border: 2px solid #FDE047; }
-        /* Solleva il badge Netlify (iframe iniettato) per non coprire la barra di navigazione in basso */
-        @media (max-width: 900px) {
-            #nl-badge-frame, #nl-hud-frame {
-                bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
-            }
-        }
     </style>
 </head>
 <body class="font-sans pb-24 bg-slate-100">
 
-    <!-- Header Verde Smeraldo -->
     <header class="bg-emerald-600 text-white p-4 shadow-md sticky top-0 z-50 text-center max-w-md mx-auto">
         <div class="flex items-center justify-center gap-2">
             <h1 class="text-2xl font-black tracking-wide">SuperBotto</h1>
@@ -58,12 +41,10 @@
         <p class="text-xs text-emerald-100 mt-1 font-medium" id="header-subtitle">Caricamento dati...</p>
     </header>
 
-    <!-- Content Area -->
     <main class="max-w-md mx-auto p-4 space-y-4" id="app-content">
         <div class="text-center py-10 text-slate-400 font-medium">⏳ Connessione al database...</div>
     </main>
 
-    <!-- Bottom Navigation -->
     <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2.5 text-xs font-bold max-w-md mx-auto z-50 shadow-lg">
         <button onclick="navigate('bacheca')" class="flex flex-col items-center text-emerald-600 nav-btn" id="btn-bacheca">
             <span class="text-lg">🍀</span> Bacheca
@@ -80,7 +61,6 @@
     </nav>
 
     <script>
-        // CONFIGURAZIONE SUPABASE
         const SUPABASE_URL = "https://utywytptssixgpoyddbb.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0eXd5dHB0c3NpeGdwb3lkZGJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MzUyMzAsImV4cCI6MjEwNzIxMTIzMH0.ZOcxwtsY_wl7BJTrsjSCI7ceb8AuqD6u1ZwROEI2YEc";
 
@@ -89,13 +69,42 @@
         let currentPage = 'bacheca';
         let state = {
             pin: "1234",
+            startDate: "2026-10-01", // Data inizio giocate del gruppo
             users: ["Francesco", "Giovanni", "Franco", "Benny", "Beldo", "Beppe", "Disi", "Peps", "Massimo", "Igor"],
             schedina: { p1: [5, 12, 28, 41, 63, 88], star1: 15, p2: [9, 17, 33, 52, 70, 81], star2: 44 },
             versamenti: [],
-            estrazioni: [],
+            estrazioniManual: [], // Vincite/estrazioni verificate
             bacheca: [],
             ultimaEstrazione: null
         };
+
+        // Genera automaticamente i giorni di estrazione (Martedì=2, Giovedì=4, Venerdì=5, Sabato=6)
+        function getAutomaticDraws() {
+            const draws = [];
+            const start = new Date(state.startDate || "2026-10-01");
+            const today = new Date();
+            let current = new Date(start);
+
+            while (current <= today) {
+                const day = current.getDay();
+                // 2 = Martedì, 4 = Giovedì, 5 = Venerdì, 6 = Sabato
+                if ([2, 4, 5, 6].includes(day)) {
+                    const dateStr = current.toLocaleDateString('it-IT');
+                    // Cerca se esiste una vincita o esito registrato per questa data
+                    const custom = (state.estrazioniManual || []).find(e => e.data === dateStr);
+                    draws.push({
+                        id: current.getTime(),
+                        data: dateStr,
+                        costo: 3.00,
+                        vincita: custom ? custom.vincita : 0,
+                        numeri: custom ? custom.numeri : null,
+                        superstar: custom ? custom.superstar : null
+                    });
+                }
+                current.setDate(current.getDate() + 1);
+            }
+            return draws;
+        }
 
         async function initDatabase() {
             const { data, error } = await supabaseClient
@@ -105,7 +114,7 @@
                 .single();
 
             if (data && data.data) {
-                state = data.data;
+                state = { ...state, ...data.data };
                 renderCurrentPage();
             } else if (error) {
                 console.error("Errore caricamento da Supabase:", error);
@@ -115,7 +124,7 @@
                 .channel('public:app_state')
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_state' }, payload => {
                     if (payload.new && payload.new.data) {
-                        state = payload.new.data;
+                        state = { ...state, ...payload.new.data };
                         renderCurrentPage();
                     }
                 })
@@ -136,14 +145,15 @@
         }
 
         function calculateMetrics() {
+            const allDraws = getAutomaticDraws();
             const numUsers = state.users.length || 1;
             const costPerDraw = 3.00 / numUsers;
-            const totalDraws = state.estrazioni.filter(e => !e.programmata).length;
-            const totalSpesi = state.estrazioni.length * 3.00;
-            const totalCostPerUser = totalSpesi / numUsers;
+            const totalDraws = allDraws.length;
+            const totalSpesi = totalDraws * 3.00;
+            const totalCostPerUser = totalDraws * costPerDraw;
 
             const totalVersato = state.versamenti.reduce((sum, v) => sum + (parseFloat(v.importo) || 0), 0);
-            const totalVincite = state.estrazioni.reduce((sum, e) => sum + (parseFloat(e.vincita) || 0), 0);
+            const totalVincite = allDraws.reduce((sum, e) => sum + (parseFloat(e.vincita) || 0), 0);
             const winPerUser = totalVincite / numUsers;
 
             const cassaComune = totalVersato - totalSpesi + totalVincite;
@@ -165,7 +175,8 @@
                 totalSpesi,
                 numUsers,
                 costPerDraw,
-                saldi
+                saldi,
+                allDraws
             };
         }
 
@@ -173,7 +184,7 @@
             const m = calculateMetrics();
             const sub = document.getElementById('header-subtitle');
             if (sub) {
-                sub.innerText = `${m.numUsers} Colleghi • 2 Pannelli • ${m.costPerDraw.toFixed(2)}€ a testa`;
+                sub.innerText = `${m.numUsers} Colleghi • 2 Pannelli • ${m.costPerDraw.toFixed(2)}€ ad estrazione`;
             }
         }
 
@@ -214,7 +225,7 @@
                     </div>
                     <div class="card-white p-4 rounded-2xl flex flex-col justify-between h-32 relative shadow-sm">
                         <div class="flex justify-between items-start text-slate-500"><span class="text-xs font-bold uppercase">Giocate</span><span>📈</span></div>
-                        <div><div class="text-2xl font-black text-slate-800">${m.totalDraws}</div><div class="text-[11px] text-slate-400">${state.estrazioni.some(e => e.programmata) ? 'giocate effettive' : 'estrazioni'}</div></div>
+                        <div><div class="text-2xl font-black text-slate-800">${m.totalDraws}</div><div class="text-[11px] text-slate-400">estrazioni giocate</div></div>
                     </div>
                     <div class="card-white p-4 rounded-2xl flex flex-col justify-between h-32 relative shadow-sm">
                         <div class="flex justify-between items-start text-slate-500"><span class="text-xs font-bold uppercase">Soldi spesi</span><span>💸</span></div>
@@ -289,6 +300,7 @@
         }
 
         function renderSchedina() {
+            const m = calculateMetrics();
             const ext = state.ultimaEstrazione;
             let resultBox = '';
             if (ext) {
@@ -298,9 +310,8 @@
                     <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3 mt-4 text-xs">
                         <div class="flex justify-between font-bold text-slate-700"><span>Ultima Estrazione (${ext.data})</span><span class="text-blue-600">Esito Online</span></div>
                         <div class="flex flex-wrap gap-1.5 items-center">
-                            ${ext.numeri.map(n => `<div class="ball ${(state.schedina.p1.includes(n)||state.schedina.p2.includes(n)) ? 'ball-hit':'ball-drawn'}" style="width:28px;height:28px;font-size:0.75rem;">${n}</div>`).join('')}
+                            ${ext.numeri.map(n => `<div class="ball ${(state.schedina.p1.includes(n)\vert{}\vert{}state.schedina.p2.includes(n)) ? 'ball-hit':'ball-drawn'}" style="width:28px;height:28px;font-size:0.75rem;">${n}</div>`).join('')}
                             ${ext.superstar ? `<div class="ball ball-star" style="width:28px;height:28px;font-size:0.75rem;">${ext.superstar}</div>` : ''}
-                            ${ext.jolly ? `<div class="ball ball-drawn" style="width:28px;height:28px;font-size:0.75rem;opacity:0.75;" title="Jolly">${ext.jolly}</div>` : ''}
                         </div>
                         <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1 font-medium text-slate-700">
                             <div>🎯 <strong>Pannello 1:</strong> ${hits1.length} numeri presi</div>
@@ -330,14 +341,14 @@
 
                 <div class="card-white rounded-2xl overflow-hidden shadow-sm space-y-2">
                     <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-800">
-                        <span>📜 Archivio Giocate e Vincite (${state.estrazioni.length})</span>
+                        <span>📜 Archivio Giocate e Estrazioni (${m.allDraws.length})</span>
                     </div>
                     <div class="divide-y divide-slate-100 text-xs">
-                        ${state.estrazioni.length === 0 ? '<div class="p-4 text-center text-slate-400">Nessuna giocata registrata finora.</div>' : state.estrazioni.slice().reverse().map(e => `
+                        ${m.allDraws.length === 0 ? '<div class="p-4 text-center text-slate-400">Nessuna giocata accumulata finora.</div>' : m.allDraws.slice().reverse().map(e => `
                             <div class="p-3.5 space-y-1.5">
                                 <div class="flex justify-between items-center font-bold">
-                                    <span class="text-slate-700">${e.programmata ? '⏳ Giocata programmata del ' : 'Estrazione del '}${e.data}</span>
-                                    <span class="${e.programmata ? 'text-blue-600 bg-blue-50' : e.vincita > 0 ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 bg-slate-100'} px-2 py-0.5 rounded-md text-[11px]">${e.programmata ? 'In programma • € 3.00' : e.vincita > 0 ? `Vinti € ${e.vincita.toFixed(2)} 🎉` : 'Nessuna vincita'}</span>
+                                    <span class="text-slate-700">Estrazione del ${e.data}</span>
+                                    <span class="${e.vincita > 0 ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 bg-slate-100'} px-2 py-0.5 rounded-md text-[11px]">${e.vincita > 0 ? `Vinti € ${e.vincita.toFixed(2)} 🎉` : 'Giocata registrata (3,00€)'}</span>
                                 </div>
                             </div>
                         `).join('')}
@@ -396,7 +407,8 @@
             const pin = document.getElementById('vincita-pin').value;
             if (pin !== state.pin) return alert('PIN Errato!');
             const importo = parseFloat(document.getElementById('vincita-importo').value);
-            state.estrazioni.push({ id: Date.now(), data: new Date().toLocaleDateString('it-IT'), costo: 3.00, vincita: importo });
+            if (!state.estrazioniManual) state.estrazioniManual = [];
+            state.estrazioniManual.push({ id: Date.now(), data: new Date().toLocaleDateString('it-IT'), vincita: importo });
             saveState();
         }
 
@@ -422,37 +434,22 @@
             const btn = document.getElementById('btn-fetch');
             if(btn) btn.innerText = "⏳ Controllo...";
             try {
-                const res = await fetch('/api/estrazione');
-                const data = await res.json();
-                if (res.ok && data && Array.isArray(data.estrazioni) && data.estrazioni.length > 0) {
-                    const est = data.estrazioni[0];
-                    state.ultimaEstrazione = {
-                        data: est.data,
-                        numeri: est.numeri,
-                        superstar: est.superstar,
-                        jolly: est.jolly
-                    };
-                    saveState();
-                    return;
+                const res = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://superenalottooggi.com/superenalotto.json'));
+                if (res.ok) {
+                    const wrapper = await res.json();
+                    const data = JSON.parse(wrapper.contents);
+                    if (data && data.comb) {
+                        state.ultimaEstrazione = { data: data.data || new Date().toLocaleDateString('it-IT'), numeri: data.comb.map(Number), superstar: Number(data.star) || null };
+                        saveState();
+                        return;
+                    }
                 }
-                const msg = data && data.error ? data.error : "Nessun dato disponibile.";
-                alert("Verifica non riuscita: " + msg);
-            } catch (err) {
-                alert("Impossibile contattare il server di verifica.");
-            }
+            } catch (err) {}
             if(btn) btn.innerText = "🔄 Riprova";
+            alert("Impossibile contattare il server.");
         }
 
         initDatabase();
-
-        // Registrazione Service Worker (necessaria per l'installazione come app)
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch(err => {
-                    console.error('Registrazione Service Worker fallita:', err);
-                });
-            });
-        }
     </script>
 </body>
 </html>

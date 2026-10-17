@@ -1,4 +1,4 @@
-const CACHE = 'superbotto-v1';
+const CACHE = 'superbotto-v2';
 const ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',

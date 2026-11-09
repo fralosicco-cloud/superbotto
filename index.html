@@ -282,7 +282,7 @@
                         seen.add(iso);
                         const dataIt = isoToIt(iso);
                         // Cerca se esiste una vincita o esito registrato per questa data
-                        const custom = (state.estrazioniManual || []).find(e => e.data === dataIt);
+                        const custom = (state.estrazioniManual || []).find(e => e.data === dataIt && e.numeri);
                         const online = (autoData.estrazioni || []).find(e => e.data === dataIt);
                         const cfgSchedina = configSchedinaA(iso);
                         draws.push({
@@ -290,13 +290,25 @@
                             data: dataIt,
                             iso,
                             costo: ((cfgSchedina && cfgSchedina.num) || 2) * COSTO_SCHEDINA,
-                            vincita: custom ? custom.vincita : 0,
+                            vincita: 0,
                             numeri: custom && custom.numeri ? custom.numeri : (online ? online.numeri : null),
                             superstar: custom && custom.superstar != null ? custom.superstar : (online ? online.superstar : null)
                         });
                     }
                     t.setUTCDate(t.getUTCDate() + 1);
                 }
+            }
+            draws.sort((a, b) => a.iso.localeCompare(b.iso));
+            // Assegna le vincite registrate: alla data esatta se è un'estrazione,
+            // altrimenti all'ultima estrazione precedente (o alla prima disponibile).
+            // Più vincite sulla stessa estrazione vengono sommate.
+            for (const v of (state.estrazioniManual || [])) {
+                const importo = parseFloat(v && v.vincita) || 0;
+                if (importo <= 0 || draws.length === 0) continue;
+                const viso = (v.data && itToISO(v.data)) || '';
+                let target = draws[0];
+                for (const d of draws) { if (d.iso <= viso) target = d; else break; }
+                target.vincita = Math.round((target.vincita + importo) * 100) / 100;
             }
             return draws;
         }
@@ -563,10 +575,20 @@
                 <div class="card-white p-5 rounded-2xl space-y-3 shadow-sm border border-emerald-100">
                     <h3 class="font-bold text-sm text-slate-800 flex items-center gap-1.5"><span>🏆</span> Registra Vincita in Cassa (Cassiere)</h3>
                     <form onsubmit="handleRegistraVincita(event)" class="space-y-3 text-xs">
-                        <div><label class="text-slate-500 mb-1 block font-medium">Importo Vinto (€)</label><input type="number" step="0.50" id="vincita-importo" placeholder="Es. 10.00" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required /></div>
+                        <div><label class="text-slate-500 mb-1 block font-medium">Estrazione vincente</label><select id="vincita-data" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required>${m.allDraws.length === 0 ? '<option value="">Nessuna estrazione disponibile</option>' : m.allDraws.slice().reverse().map(d => `<option value="${d.data}">Estrazione del ${d.data}</option>`).join('')}</select></div>
+                        <div><label class="text-slate-500 mb-1 block font-medium">Importo Vinto (€)</label><input type="number" step="0.01" min="0.01" inputmode="decimal" id="vincita-importo" placeholder="Es. 10.00" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required /></div>
                         <div><label class="text-slate-500 mb-1 block font-medium">PIN Cassiere</label><input type="password" id="vincita-pin" placeholder="PIN Segreto" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800" required /></div>
                         <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl shadow transition">+ Aggiungi Vincita a Cassa</button>
                     </form>
+                    ${(state.estrazioniManual || []).some(v => parseFloat(v.vincita) > 0) ? `
+                    <div class="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
+                        <div class="text-slate-500 font-medium">Vincite registrate</div>
+                        ${(state.estrazioniManual || []).filter(v => parseFloat(v.vincita) > 0).slice().reverse().map(v => `
+                        <div class="flex justify-between items-center p-2 bg-emerald-50 rounded-xl border border-emerald-100">
+                            <span class="text-slate-700">${v.data} · <strong class="text-emerald-700">€ ${parseFloat(v.vincita).toFixed(2).replace('.', ',')}</strong></span>
+                            <button type="button" onclick="handleRimuoviVincita(${Number(v.id)})" class="text-rose-600 hover:text-rose-700 font-bold text-[11px] bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">Elimina</button>
+                        </div>`).join('')}
+                    </div>` : ''}
                 </div>
 
                 <div class="card-white rounded-2xl overflow-hidden shadow-sm space-y-2">
@@ -744,9 +766,22 @@
             e.preventDefault();
             const pin = document.getElementById('vincita-pin').value;
             if (pin !== state.pin) return alert('PIN Errato!');
-            const importo = parseFloat(document.getElementById('vincita-importo').value);
-            if (!state.estrazioniManual) state.estrazioniManual = [];
-            state.estrazioniManual.push({ id: Date.now(), data: new Date().toLocaleDateString('it-IT'), vincita: importo });
+            const importo = Math.round(parseFloat(String(document.getElementById('vincita-importo').value).replace(',', '.')) * 100) / 100;
+            if (!(importo > 0)) return alert("Inserisci un importo valido maggiore di zero.");
+            const sel = document.getElementById('vincita-data');
+            const data = (sel && sel.value) || isoToIt(romeNowInfo().iso);
+            if (!Array.isArray(state.estrazioniManual)) state.estrazioniManual = [];
+            state.estrazioniManual.push({ id: Date.now(), data, vincita: importo });
+            saveState();
+            alert(`Vincita di € ${importo.toFixed(2).replace('.', ',')} aggiunta alla cassa (estrazione del ${data}).`);
+        }
+
+        function handleRimuoviVincita(id) {
+            const pin = prompt('Inserisci il PIN Cassiere:');
+            if (pin === null) return;
+            if (pin !== state.pin) return alert('PIN Errato!');
+            if (!confirm('Eliminare questa vincita dalla cassa?')) return;
+            state.estrazioniManual = (state.estrazioniManual || []).filter(v => Number(v.id) !== Number(id));
             saveState();
         }
 

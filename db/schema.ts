@@ -57,3 +57,14 @@ export const notificheInviate = pgTable("notifiche_inviate", {
   chiave: text().primaryKey(),
   creataIl: timestamp("creata_il", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Schedine del mese (dal 1° dicembre 2026): una SuperEnalotto e una EuroJackpot, con numeri casuali
+// generati il primo di ogni mese. mese = 'yyyy-mm'
+export const schedineMensili = pgTable("schedine_mensili", {
+  mese: text().primaryKey(),
+  // { numeri: number[6] (1-90), superstar: number (1-90) }
+  superenalotto: jsonb().notNull().$type<{ numeri: number[]; superstar: number }>(),
+  // { numeri: number[5] (1-50), euronumeri: number[2] (1-12) }
+  eurojackpot: jsonb().notNull().$type<{ numeri: number[]; euronumeri: number[] }>(),
+  creataIl: timestamp("creata_il", { withTimezone: true }).notNull().defaultNow(),
+});

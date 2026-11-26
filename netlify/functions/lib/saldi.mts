@@ -1,4 +1,5 @@
 import { romeNow } from './tempo.mts'
+import { COSTO_EUROJACKPOT, COSTO_SUPERENALOTTO, GIORNI_EUROJACKPOT, INIZIO_MENSILI } from './regole.mts'
 
 // Replica lato server del calcolo dei saldi dell'app (vedi calculateMetrics in index.html)
 const COSTO_SCHEDINA = 1.5
@@ -28,6 +29,13 @@ function numSchedineA(stato: StatoGruppo, iso: string): number {
   return (cfg && cfg.num) || 2
 }
 
+// Costo di una serata: fino al 30/11/2026 le schedine SuperEnalotto configurate,
+// dal 1/12/2026 1 SuperEnalotto + 1 EuroJackpot il martedì e il venerdì.
+export function costoEstrazione(stato: StatoGruppo, iso: string, giorno: number): number {
+  if (iso < INIZIO_MENSILI) return numSchedineA(stato, iso) * COSTO_SCHEDINA
+  return COSTO_SUPERENALOTTO + (GIORNI_EUROJACKPOT.includes(giorno) ? COSTO_EUROJACKPOT : 0)
+}
+
 export function calcolaSaldi(stato: StatoGruppo, periodi: Periodo[]): { user: string; saldo: number }[] {
   const users = Array.isArray(stato.users) ? stato.users : []
   const numUsers = users.length || 1
@@ -53,7 +61,7 @@ export function calcolaSaldi(stato: StatoGruppo, periodi: Periodo[]): { user: st
       if (GIORNI_ESTRAZIONE.includes(t.getUTCDay()) && !visti.has(iso)) {
         visti.add(iso)
         numEstrazioni++
-        totalSpesi += numSchedineA(stato, iso) * COSTO_SCHEDINA
+        totalSpesi += costoEstrazione(stato, iso, t.getUTCDay())
       }
       t.setUTCDate(t.getUTCDate() + 1)
     }

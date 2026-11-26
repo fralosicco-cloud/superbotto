@@ -5,6 +5,7 @@ import { db } from '../../db/index.js'
 import { iscrizioniPush, statoGruppo } from '../../db/schema.js'
 import { getChiaviVapid, inviaNotifica, primaVolta } from './lib/push.mts'
 import type { StatoGruppo } from './lib/saldi.mts'
+import { controllaSaldiNegativi } from './lib/rosso.mts'
 
 const STATO_ID = 'main'
 const MAX_STATO_BYTES = 512 * 1024
@@ -52,7 +53,8 @@ async function sincronizza(body: Record<string, unknown>) {
   const versionePrecedente = (precedente?.dati as { versione?: string } | undefined)?.versione || ''
 
   // Non sovrascrive la copia con uno stato più vecchio (es. un dispositivo rimasto indietro)
-  if (!versione || !versionePrecedente || versione >= versionePrecedente) {
+  const piuRecente = !versione || !versionePrecedente || versione >= versionePrecedente
+  if (piuRecente) {
     await db
       .insert(statoGruppo)
       .values({ id: STATO_ID, dati: { versione, stato: pulito } })
@@ -94,6 +96,16 @@ async function sincronizza(body: Record<string, unknown>) {
         tag: `vincita-${String(v.id)}`,
       },
     )
+  }
+
+  // Saldi negativi: avviso immediato a chi è appena andato in rosso (es. vincita o versamento corretti, nuova estrazione)
+  const statoAttuale = piuRecente
+    ? (pulito as StatoGruppo)
+    : ((precedente?.dati as { stato?: StatoGruppo } | undefined)?.stato ?? (pulito as StatoGruppo))
+  try {
+    notificate += await controllaSaldiNegativi(statoAttuale, { promemoria: false })
+  } catch (err) {
+    console.error('[notifiche] Controllo saldi non riuscito:', err)
   }
 
   return json({ ok: true, notificate })

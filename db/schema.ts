@@ -24,3 +24,36 @@ export const impostazioni = pgTable("impostazioni", {
   periodi: jsonb().notNull().$type<{ da: string | null; al: string | null }[]>(),
   aggiornataIl: timestamp("aggiornata_il", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Iscrizioni alle notifiche push (una riga per dispositivo/browser)
+export const iscrizioniPush = pgTable("iscrizioni_push", {
+  endpoint: text().primaryKey(),
+  // Nome del partecipante che ha attivato le notifiche su questo dispositivo
+  nome: text().notNull(),
+  p256dh: text().notNull(),
+  auth: text().notNull(),
+  creataIl: timestamp("creata_il", { withTimezone: true }).notNull().defaultNow(),
+  aggiornataIl: timestamp("aggiornata_il", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Chiavi VAPID per firmare le notifiche push (generate automaticamente al primo utilizzo, riga id = 'main')
+export const chiaviVapid = pgTable("chiavi_vapid", {
+  id: text().primaryKey(),
+  pubblica: text().notNull(),
+  privata: text().notNull(),
+  creataIl: timestamp("creata_il", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Copia dello stato del gruppo (bacheca, versamenti, vincite, schedine) usata dal server
+// per calcolare i saldi e capire quali novità notificare (riga id = 'main')
+export const statoGruppo = pgTable("stato_gruppo", {
+  id: text().primaryKey(),
+  dati: jsonb().notNull(),
+  aggiornatoIl: timestamp("aggiornato_il", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Registro delle notifiche già inviate, per non inviarle due volte
+export const notificheInviate = pgTable("notifiche_inviate", {
+  chiave: text().primaryKey(),
+  creataIl: timestamp("creata_il", { withTimezone: true }).notNull().defaultNow(),
+});

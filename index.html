@@ -316,15 +316,17 @@
         async function initDatabase() {
             const { data, error } = await supabaseClient
                 .from('app_state')
-                .select('data')
+                .select('data, updated_at')
                 .eq('id', 'main_db')
                 .single();
 
             if (data && data.data) {
                 state = { ...state, ...data.data };
                 normalizzaState(data.data);
+                impostaVersioneStato(data.updated_at);
                 verificaSessione();
                 renderCurrentPage();
+                sincronizzaNotifiche();
             } else if (error) {
                 console.error("Errore caricamento da Supabase:", error);
             }
@@ -335,8 +337,10 @@
                     if (payload.new && payload.new.data) {
                         state = { ...state, ...payload.new.data };
                         normalizzaState(payload.new.data);
+                        impostaVersioneStato(payload.new.updated_at);
                         verificaSessione();
                         renderCurrentPage();
+                        sincronizzaNotifiche();
                     }
                 })
                 .subscribe();
@@ -344,14 +348,18 @@
 
         async function saveState() {
             renderCurrentPage();
+            const ora = new Date().toISOString();
             const { error } = await supabaseClient
                 .from('app_state')
-                .update({ data: state, updated_at: new Date().toISOString() })
+                .update({ data: state, updated_at: ora })
                 .eq('id', 'main_db');
 
             if (error) {
                 alert("Errore durante il salvataggio in rete!");
                 console.error(error);
+            } else {
+                impostaVersioneStato(ora);
+                sincronizzaNotifiche();
             }
         }
 
@@ -455,6 +463,8 @@
                         <div><div class="text-2xl font-black text-slate-700">€ ${m.totalSpesi.toFixed(2)}</div><div class="text-[11px] text-slate-400">schedine</div></div>
                     </div>
                 </div>
+
+                ${renderNotificheCard()}
 
                 <div class="card-white p-4 rounded-2xl space-y-3 shadow-sm">
                     <h2 class="font-bold text-sm text-slate-800 flex items-center gap-1.5"><span>🍀</span> Bacheca del Gruppo</h2>
@@ -800,7 +810,7 @@
             e.preventDefault();
             if (!utente) { apriLogin(); return; }
             const testo = document.getElementById('b-msg').value;
-            state.bacheca.unshift({ user: utente, testo, data: new Date().toLocaleDateString('it-IT') });
+            state.bacheca.unshift({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), user: utente, testo, data: new Date().toLocaleDateString('it-IT') });
             saveState();
         }
 
@@ -839,6 +849,7 @@
         }
 
         function esciLogin() {
+            disattivaNotifiche(true);
             utente = null;
             try { localStorage.removeItem('sb_utente'); } catch (err) {}
             verificaSessione();
@@ -863,6 +874,7 @@
                 if (res.ok && data.ok) {
                     utente = nome;
                     try { localStorage.setItem('sb_utente', nome); } catch (err) {}
+                    aggiornaIscrizioneNotifiche();
                     chiudiOverlayLogin();
                     renderCurrentPage();
                     return;
@@ -964,6 +976,181 @@
             `;
         }
 
+        // ---------- Notifiche push ----------
+        // Il server riceve una copia dello stato per sapere cosa notificare (nuovi messaggi, vincite)
+        // e per calcolare chi è in rosso dopo ogni estrazione.
+        let versioneStato = '';
+        let timerSincronizzazione = null;
+        let notificheStato = 'caricamento'; // caricamento | non-supportate | installa-app | negate | attive | spente
+        let notificheInCorso = false;
+
+        function impostaVersioneStato(v) {
+            if (!v) return;
+            const d = new Date(v);
+            if (!isNaN(d)) versioneStato = d.toISOString();
+        }
+
+        function sincronizzaNotifiche() {
+            clearTimeout(timerSincronizzazione);
+            timerSincronizzazione = setTimeout(() => {
+                const { pin, ...stato } = state;
+                fetch('/api/notifiche/sincronizza', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stato, versione: versioneStato })
+                }).catch(() => {});
+            }, 800);
+        }
+
+        function notificheSupportate() {
+            return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+        }
+
+        function isIOS() {
+            return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        }
+
+        function isAppInstallata() {
+            return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+        }
+
+        function base64UrlToUint8Array(b64) {
+            const pad = '='.repeat((4 - b64.length % 4) % 4);
+            const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+            return Uint8Array.from(raw, c => c.charCodeAt(0));
+        }
+
+        async function iscrizioneCorrente() {
+            if (!notificheSupportate()) return null;
+            const reg = await navigator.serviceWorker.ready;
+            return reg.pushManager.getSubscription();
+        }
+
+        async function aggiornaStatoNotifiche() {
+            if (!notificheSupportate()) {
+                notificheStato = isIOS() && !isAppInstallata() ? 'installa-app' : 'non-supportate';
+            } else if (Notification.permission === 'denied') {
+                notificheStato = 'negate';
+            } else {
+                try {
+                    const sub = await iscrizioneCorrente();
+                    notificheStato = sub && Notification.permission === 'granted' ? 'attive' : 'spente';
+                } catch (err) { notificheStato = 'spente'; }
+            }
+            if (currentPage === 'bacheca') renderCurrentPage();
+        }
+
+        async function registraIscrizione(sub) {
+            const res = await fetch('/api/notifiche/iscrizione', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nome: utente, iscrizione: sub.toJSON() })
+            });
+            if (!res.ok) throw new Error('Registrazione non riuscita');
+        }
+
+        async function attivaNotifiche() {
+            if (!utente) { apriLogin(); return; }
+            if (notificheInCorso) return;
+            notificheInCorso = true;
+            renderCurrentPage();
+            try {
+                const permesso = await Notification.requestPermission();
+                if (permesso !== 'granted') {
+                    if (permesso === 'denied') alert('Hai bloccato le notifiche. Puoi riattivarle dalle impostazioni del browser o del telefono.');
+                    return;
+                }
+                const res = await fetch('/api/notifiche/chiave', { cache: 'no-store' });
+                const { chiave } = await res.json();
+                const reg = await navigator.serviceWorker.ready;
+                let sub = await reg.pushManager.getSubscription();
+                if (!sub) {
+                    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(chiave) });
+                }
+                await registraIscrizione(sub);
+                fetch('/api/notifiche/prova', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ endpoint: sub.endpoint })
+                }).catch(() => {});
+            } catch (err) {
+                console.error(err);
+                alert('Non è stato possibile attivare le notifiche su questo dispositivo. Riprova.');
+            } finally {
+                notificheInCorso = false;
+                await aggiornaStatoNotifiche();
+            }
+        }
+
+        async function disattivaNotifiche(silenzioso) {
+            try {
+                const sub = await iscrizioneCorrente();
+                if (sub) {
+                    await fetch('/api/notifiche/iscrizione', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ endpoint: sub.endpoint })
+                    }).catch(() => {});
+                    await sub.unsubscribe();
+                }
+            } catch (err) {
+                if (!silenzioso) alert('Non è stato possibile disattivare le notifiche.');
+            }
+            await aggiornaStatoNotifiche();
+        }
+
+        // Collega l'iscrizione già presente al partecipante attualmente connesso
+        async function aggiornaIscrizioneNotifiche() {
+            try {
+                if (!utente || !notificheSupportate() || Notification.permission !== 'granted') return;
+                const sub = await iscrizioneCorrente();
+                if (sub) await registraIscrizione(sub);
+            } catch (err) {}
+        }
+
+        function renderNotificheCard() {
+            const s = notificheStato;
+            if (s === 'caricamento') return '';
+            let descrizione, azione = '';
+            const btn = (testo, onclick, classi) => `<button onclick="${onclick}" ${notificheInCorso ? 'disabled' : ''} class="${classi} text-xs font-bold px-3 py-2 rounded-xl shadow-sm transition whitespace-nowrap disabled:opacity-60">${notificheInCorso ? '⏳' : testo}</button>`;
+            if (s === 'attive') {
+                descrizione = 'Attive su questo dispositivo: messaggi in bacheca, vincite e avviso se sei in rosso.';
+                azione = btn('Disattiva', 'disattivaNotifiche()', 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200');
+            } else if (s === 'spente') {
+                descrizione = 'Ricevi un avviso per i nuovi messaggi in bacheca, le vincite e quando devi fare un versamento.';
+                azione = btn('Attiva', 'attivaNotifiche()', 'bg-emerald-600 hover:bg-emerald-700 text-white');
+            } else if (s === 'negate') {
+                descrizione = 'Le notifiche sono bloccate. Riattivale dalle impostazioni del browser o del telefono per questo sito.';
+            } else if (s === 'installa-app') {
+                descrizione = 'Su iPhone/iPad aggiungi prima SuperBotto alla schermata Home (Condividi → Aggiungi alla schermata Home), poi aprila da lì per attivare le notifiche.';
+            } else {
+                descrizione = 'Questo browser non supporta le notifiche push.';
+            }
+            return `
+                <div class="card-white p-4 rounded-2xl shadow-sm flex items-center gap-3">
+                    <div class="text-2xl">${s === 'attive' ? '🔔' : '🔕'}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold text-sm text-slate-800">Notifiche</div>
+                        <div class="text-[11px] text-slate-500 leading-snug">${descrizione}</div>
+                    </div>
+                    ${azione}
+                </div>`;
+        }
+
+        // Apertura dell'app da una notifica: va alla pagina indicata
+        (function () {
+            const pagina = new URLSearchParams(location.search).get('pagina');
+            if (pagina && ['bacheca', 'cassa', 'schedina', 'versamenti'].includes(pagina)) {
+                history.replaceState(null, '', '/');
+                navigate(pagina);
+            }
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.addEventListener('message', (ev) => {
+                    if (ev.data && ev.data.tipo === 'apri-pagina' && ev.data.pagina) navigate(ev.data.pagina);
+                });
+            }
+        })();
+
         initDatabase();
         loadAuto();
         verificaSessione();
@@ -974,6 +1161,7 @@
                 navigator.serviceWorker.register('/sw.js').catch(() => {});
             });
         }
+        aggiornaStatoNotifiche().then(aggiornaIscrizioneNotifiche);
     </script>
 </body>
 </html>

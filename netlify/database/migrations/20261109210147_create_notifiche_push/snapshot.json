@@ -1,0 +1,456 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "a07fec06-3d71-45c4-9a3c-9985d6e2f721",
+  "prevIds": [
+    "3ac852ed-71ea-4a23-a815-f2eee000a28a"
+  ],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "chiavi_vapid",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "estrazioni",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "impostazioni",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "iscrizioni_push",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "notifiche_inviate",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "stato_gruppo",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chiavi_vapid"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "pubblica",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chiavi_vapid"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "privata",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chiavi_vapid"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "creata_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chiavi_vapid"
+    },
+    {
+      "type": "serial",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "data",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "numeri",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "superstar",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "jolly",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'automatica'",
+      "generated": null,
+      "identity": null,
+      "name": "fonte",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "creata_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "estrazioni"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "impostazioni"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "true",
+      "generated": null,
+      "identity": null,
+      "name": "attiva",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "impostazioni"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "periodi",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "impostazioni"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "aggiornata_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "impostazioni"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "endpoint",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "iscrizioni_push"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "nome",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "iscrizioni_push"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "p256dh",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "iscrizioni_push"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "auth",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "iscrizioni_push"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "creata_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "iscrizioni_push"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "aggiornata_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "iscrizioni_push"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "chiave",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "notifiche_inviate"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "creata_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "notifiche_inviate"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "stato_gruppo"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "dati",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "stato_gruppo"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "aggiornato_il",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "stato_gruppo"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "chiavi_vapid_pkey",
+      "schema": "public",
+      "table": "chiavi_vapid",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "estrazioni_pkey",
+      "schema": "public",
+      "table": "estrazioni",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "impostazioni_pkey",
+      "schema": "public",
+      "table": "impostazioni",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "endpoint"
+      ],
+      "nameExplicit": false,
+      "name": "iscrizioni_push_pkey",
+      "schema": "public",
+      "table": "iscrizioni_push",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "chiave"
+      ],
+      "nameExplicit": false,
+      "name": "notifiche_inviate_pkey",
+      "schema": "public",
+      "table": "notifiche_inviate",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "stato_gruppo_pkey",
+      "schema": "public",
+      "table": "stato_gruppo",
+      "entityType": "pks"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "data"
+      ],
+      "nullsNotDistinct": false,
+      "name": "estrazioni_data_key",
+      "schema": "public",
+      "table": "estrazioni",
+      "entityType": "uniques"
+    }
+  ],
+  "renames": []
+}

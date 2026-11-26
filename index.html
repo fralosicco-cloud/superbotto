@@ -978,7 +978,7 @@
 
         // ---------- Notifiche push ----------
         // Il server riceve una copia dello stato per sapere cosa notificare (nuovi messaggi, vincite)
-        // e per calcolare chi è in rosso dopo ogni estrazione.
+        // e per avvisare subito chi va in rosso (oltre al promemoria dopo ogni estrazione).
         let versioneStato = '';
         let timerSincronizzazione = null;
         let notificheStato = 'caricamento'; // caricamento | non-supportate | installa-app | negate | attive | spente
@@ -1114,10 +1114,10 @@
             let descrizione, azione = '';
             const btn = (testo, onclick, classi) => `<button onclick="${onclick}" ${notificheInCorso ? 'disabled' : ''} class="${classi} text-xs font-bold px-3 py-2 rounded-xl shadow-sm transition whitespace-nowrap disabled:opacity-60">${notificheInCorso ? '⏳' : testo}</button>`;
             if (s === 'attive') {
-                descrizione = 'Attive su questo dispositivo: messaggi in bacheca, vincite e avviso se sei in rosso.';
+                descrizione = 'Attive su questo dispositivo: nuovi messaggi in bacheca, vincite registrate dal cassiere e avviso appena la tua cassa va in negativo.';
                 azione = btn('Disattiva', 'disattivaNotifiche()', 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200');
             } else if (s === 'spente') {
-                descrizione = 'Ricevi un avviso per i nuovi messaggi in bacheca, le vincite e quando devi fare un versamento.';
+                descrizione = 'Ricevi un avviso per i nuovi messaggi in bacheca, le vincite registrate dal cassiere e appena la tua cassa va in negativo.';
                 azione = btn('Attiva', 'attivaNotifiche()', 'bg-emerald-600 hover:bg-emerald-700 text-white');
             } else if (s === 'negate') {
                 descrizione = 'Le notifiche sono bloccate. Riattivale dalle impostazioni del browser o del telefono per questo sito.';

@@ -36,6 +36,8 @@
         }
         .ball-main { background: linear-gradient(135deg, #10B981, #047857); }
         .ball-star { background: linear-gradient(135deg, #F59E0B, #D97706); }
+        .ball-ej { background: linear-gradient(135deg, #2563EB, #1E3A8A); }
+        .ball-euro { background: linear-gradient(135deg, #FACC15, #CA8A04); color: #1E3A8A; }
         .ball-drawn { background: linear-gradient(135deg, #3B82F6, #1D4ED8); }
         .ball-hit { background: linear-gradient(135deg, #EF4444, #B91C1C); border: 2px solid #FDE047; }
         header { padding-top: calc(1rem + env(safe-area-inset-top)) !important; }
@@ -125,6 +127,51 @@
         let editingSchedina = false;
         let editor = null;
 
+        // Dal 1° dicembre 2026: 1 SuperEnalotto (ogni estrazione) + 1 EuroJackpot (martedì e venerdì),
+        // con numeri casuali generati dal server il primo di ogni mese.
+        const INIZIO_MENSILI = '2026-12-01';
+        const COSTO_SUPERENALOTTO = 1.50;
+        const COSTO_EUROJACKPOT = 2.00;
+        const GIORNI_EUROJACKPOT = [2, 5]; // Martedì, Venerdì
+        let mensiliData = { caricato: false, mesi: [] };
+        let mostraMesiPrecedenti = false;
+
+        function modalitaMensile(iso) { return iso >= INIZIO_MENSILI; }
+        function schedineMeseA(iso) {
+            return (mensiliData.mesi || []).find(m => m.mese === String(iso).slice(0, 7)) || null;
+        }
+        function giocaEuroJackpotA(iso) {
+            return modalitaMensile(iso) && GIORNI_EUROJACKPOT.includes(weekdayOfISO(iso));
+        }
+        // Costo di una serata di gioco alla data iso
+        function costoEstrazioneA(iso) {
+            if (!modalitaMensile(iso)) {
+                const c = configSchedinaA(iso);
+                return ((c && c.num) || 2) * COSTO_SCHEDINA;
+            }
+            return COSTO_SUPERENALOTTO + (giocaEuroJackpotA(iso) ? COSTO_EUROJACKPOT : 0);
+        }
+        // Costo di una settimana di gioco (4 estrazioni) secondo le schedine in vigore alla data iso
+        function costoSettimanaA(iso) {
+            if (!modalitaMensile(iso)) {
+                const c = configSchedinaA(iso);
+                return ((c && c.num) || 2) * COSTO_SCHEDINA * GIORNI_ESTRAZIONE.length;
+            }
+            return COSTO_SUPERENALOTTO * GIORNI_ESTRAZIONE.length + COSTO_EUROJACKPOT * GIORNI_EUROJACKPOT.length;
+        }
+
+        async function loadMensili() {
+            try {
+                const res = await fetch('/api/schedine-mensili', { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                const mesi = Array.isArray(data.mesi) ? data.mesi : [];
+                const cambiato = JSON.stringify(mesi) !== JSON.stringify(mensiliData.mesi);
+                mensiliData = { caricato: true, mesi };
+                if (cambiato) renderCurrentPage();
+            } catch (err) { /* Riproverà al prossimo controllo */ }
+        }
+
         function numeroRandom() { return 1 + Math.floor(Math.random() * 90); }
         function numeriRandom(giaUsati) {
             const usati = new Set();
@@ -171,6 +218,10 @@
         }
         function schedinaCorrente() { return configSchedinaA(romeNowInfo().iso); }
         function schedineAttiveA(iso) {
+            if (modalitaMensile(iso)) {
+                const m = schedineMeseA(iso);
+                return m && m.superenalotto ? [m.superenalotto] : [];
+            }
             const c = configSchedinaA(iso);
             return ((c && c.schedine) || []).slice(0, (c && c.num) || 2);
         }
@@ -284,12 +335,12 @@
                         // Cerca se esiste una vincita o esito registrato per questa data
                         const custom = (state.estrazioniManual || []).find(e => e.data === dataIt && e.numeri);
                         const online = (autoData.estrazioni || []).find(e => e.data === dataIt);
-                        const cfgSchedina = configSchedinaA(iso);
                         draws.push({
                             id: t.getTime(),
                             data: dataIt,
                             iso,
-                            costo: ((cfgSchedina && cfgSchedina.num) || 2) * COSTO_SCHEDINA,
+                            costo: costoEstrazioneA(iso),
+                            eurojackpot: giocaEuroJackpotA(iso),
                             vincita: 0,
                             numeri: custom && custom.numeri ? custom.numeri : (online ? online.numeri : null),
                             superstar: custom && custom.superstar != null ? custom.superstar : (online ? online.superstar : null)
@@ -370,10 +421,13 @@
             const totalSpesi = allDraws.reduce((sum, e) => sum + (parseFloat(e.costo) || 0), 0);
             const totalCostPerUser = totalSpesi / numUsers;
 
+            const oggiISO = romeNowInfo().iso;
             const corrente = schedinaCorrente();
             const numSchedine = (corrente && corrente.num) || 2;
-            const costoEstrazione = numSchedine * COSTO_SCHEDINA;
-            const costPerDraw = costoEstrazione / numUsers;
+            const costoEstrazione = costoEstrazioneA(oggiISO);
+            const costoSettimana = costoSettimanaA(oggiISO);
+            const costPerWeek = costoSettimana / numUsers;
+            const descrizioneSchedine = modalitaMensile(oggiISO) ? '1 SuperEnalotto + 1 EuroJackpot' : `${numSchedine} Schedine`;
 
             const totalVersato = state.versamenti.reduce((sum, v) => sum + (parseFloat(v.importo) || 0), 0);
             const totalVincite = allDraws.reduce((sum, e) => sum + (parseFloat(e.vincita) || 0), 0);
@@ -399,7 +453,9 @@
                 numUsers,
                 numSchedine,
                 costoEstrazione,
-                costPerDraw,
+                costoSettimana,
+                costPerWeek,
+                descrizioneSchedine,
                 saldi,
                 allDraws
             };
@@ -409,7 +465,7 @@
             const m = calculateMetrics();
             const sub = document.getElementById('header-subtitle');
             if (sub) {
-                sub.innerText = `${m.numUsers} Colleghi • ${m.numSchedine} Schedine • ${m.costPerDraw.toFixed(2)}€ ad estrazione`;
+                sub.innerText = `${m.numUsers} Colleghi • ${m.descrizioneSchedine} • ${m.costPerWeek.toFixed(2)}€ a settimana`;
             }
             const uh = document.getElementById('header-utente');
             if (uh) {
@@ -496,7 +552,7 @@
                 <div class="card-white rounded-2xl overflow-hidden shadow-sm">
                     <div class="p-3.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center text-xs font-bold text-slate-700">
                         <span class="text-sm font-bold">Saldi Partecipanti (${m.numUsers})</span>
-                        <span class="text-slate-400">Quota: ${m.costPerDraw.toFixed(2)}€/estrazione</span>
+                        <span class="text-slate-400">Quota: ${m.costPerWeek.toFixed(2)}€/settimana</span>
                     </div>
                     <div class="divide-y divide-slate-100">
                         ${m.saldi.map(s => `
@@ -554,11 +610,16 @@
                                 ${ext.superstar ? `<div class="ball ball-star" style="width:28px;height:28px;font-size:0.75rem;">${ext.superstar}</div>` : ''}
                             </div>
                             <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1 font-medium text-slate-700">
-                                ${attive.map((p, i) => `<div>🎯 <strong>Schedina ${i + 1}:</strong> ${(p.numeri || []).filter(n => ext.numeri.includes(n)).length} numeri presi</div>`).join('')}
+                                ${attive.length === 0 ? '<div>Schedina del mese non ancora disponibile.</div>' : attive.map((p, i) => `<div>🎯 <strong>${modalitaMensile(isoDraw) ? 'SuperEnalotto' : `Schedina ${i + 1}`}:</strong> ${(p.numeri || []).filter(n => ext.numeri.includes(n)).length} numeri presi</div>`).join('')}
+                                ${giocaEuroJackpotA(isoDraw) ? '<div class="text-slate-400 text-[11px]">L\'esito EuroJackpot va controllato a mano: se vinciamo, il cassiere registra la vincita qui sotto.</div>' : ''}
                             </div>
                         </div>
                     `;
                 }
+                const oggiISO = romeNowInfo().iso;
+                if (modalitaMensile(oggiISO)) {
+                    numeriCard = renderSchedineMensili(oggiISO, resultBox);
+                } else {
                 const corrente = schedinaCorrente();
                 const schedine = (corrente.schedine || []).slice(0, corrente.num || 2);
                 numeriCard = `
@@ -573,8 +634,10 @@
                         <div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl p-2.5">💶 Costo: <strong>${m.numSchedine} × 1,50€ = ${m.costoEstrazione.toFixed(2).replace('.', ',')}€</strong> ad estrazione</div>
                         <button onclick="controlloAutomatico()" id="btn-fetch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow text-xs flex items-center justify-center gap-2 mt-2"><span>🔄</span> Verifica Estrazione Ufficiale Online</button>
                         ${resultBox}
+                        <div class="text-[11px] text-blue-800 bg-blue-50 border border-blue-100 rounded-xl p-2.5">📣 Dal <strong>1° dicembre</strong> si cambia: <strong>1 SuperEnalotto</strong> (ogni estrazione, 1,50€) + <strong>1 EuroJackpot</strong> (martedì e venerdì, 2,00€), con numeri estratti a caso il primo di ogni mese.</div>
                     </div>
                 `;
+                }
             }
 
             return `
@@ -611,7 +674,7 @@
                             return `
                             <div class="p-3.5 space-y-1.5">
                                 <div class="flex justify-between items-center font-bold">
-                                    <span class="text-slate-700">Estrazione del ${e.data}</span>
+                                    <span class="text-slate-700">Estrazione del ${e.data}${e.eurojackpot ? ' <span class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded">+ EuroJackpot</span>' : ''}</span>
                                     <span class="${e.vincita > 0 ? 'text-emerald-600 bg-emerald-50' : e.numeri ? 'text-blue-600 bg-blue-50' : 'text-slate-400 bg-slate-100'} px-2 py-0.5 rounded-md text-[11px]">${e.vincita > 0 ? `Vinti € ${e.vincita.toFixed(2)} 🎉` : e.numeri ? 'Esito aggiornato ✓' : `Giocata registrata (${e.costo.toFixed(2).replace('.', ',')}€)`}</span>
                                 </div>
                                 ${e.numeri ? `
@@ -626,8 +689,69 @@
             `;
         }
 
+        // ---------- Schedine mensili (SuperEnalotto + EuroJackpot) ----------
+        function nomeMese(mese) {
+            const [a, m] = mese.split('-').map(Number);
+            const t = new Date(Date.UTC(a, m - 1, 15)).toLocaleDateString('it-IT', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+            return t.charAt(0).toUpperCase() + t.slice(1);
+        }
+
+        function ballsSuperEnalotto(se, cls) {
+            return `${(se.numeri || []).map(n => `<div class="ball ${cls} ball-main">${n}</div>`).join('')}<div class="ball ${cls} ball-star">${se.superstar}</div>`;
+        }
+        function ballsEuroJackpot(ej, cls) {
+            return `${(ej.numeri || []).map(n => `<div class="ball ${cls} ball-ej">${n}</div>`).join('')}${(ej.euronumeri || []).map(n => `<div class="ball ${cls} ball-euro">${n}</div>`).join('')}`;
+        }
+
+        function toggleMesiPrecedenti() {
+            mostraMesiPrecedenti = !mostraMesiPrecedenti;
+            renderCurrentPage();
+        }
+
+        function renderSchedineMensili(oggiISO, resultBox) {
+            const corrente = schedineMeseA(oggiISO);
+            const meseCorr = oggiISO.slice(0, 7);
+            const precedenti = (mensiliData.mesi || []).filter(m => m.mese < meseCorr).slice().reverse();
+            const settimana = costoSettimanaA(oggiISO).toFixed(2).replace('.', ',');
+            const corpo = corrente ? `
+                <div class="space-y-2">
+                    <div class="flex justify-between items-baseline"><span class="text-xs font-bold text-emerald-700">🍀 SuperEnalotto</span><span class="text-[10px] text-slate-400">ogni estrazione · 1,50€</span></div>
+                    <div class="flex gap-2 flex-wrap">${ballsSuperEnalotto(corrente.superenalotto, '')}</div>
+                    <div class="text-[10px] text-slate-400">6 numeri + SuperStar</div>
+                </div>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-baseline"><span class="text-xs font-bold text-blue-800">🇪🇺 EuroJackpot</span><span class="text-[10px] text-slate-400">martedì e venerdì · 2,00€</span></div>
+                    <div class="flex gap-2 flex-wrap">${ballsEuroJackpot(corrente.eurojackpot, '')}</div>
+                    <div class="text-[10px] text-slate-400">5 numeri + 2 Euronumeri</div>
+                </div>
+            ` : `<div class="text-xs text-slate-400 text-center py-4">${mensiliData.caricato ? 'Le schedine del mese sono in preparazione…' : '⏳ Caricamento schedine…'}</div>`;
+            return `
+                <div class="card-white p-5 rounded-2xl space-y-5 shadow-sm">
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                        <h2 class="font-bold text-xl text-slate-800">Le Nostre Schedine</h2>
+                        <span class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">🎲 ${nomeMese(meseCorr)}</span>
+                    </div>
+                    ${corpo}
+                    <div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl p-2.5">💶 Costo: <strong>4 × 1,50€ + 2 × 2,00€ = ${settimana}€</strong> a settimana. I numeri vengono estratti a caso il primo di ogni mese.</div>
+                    <button onclick="controlloAutomatico()" id="btn-fetch" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow text-xs flex items-center justify-center gap-2 mt-2"><span>🔄</span> Verifica Estrazione SuperEnalotto Online</button>
+                    ${resultBox}
+                    ${precedenti.length > 0 ? `
+                    <div class="border-t border-slate-100 pt-3">
+                        <button onclick="toggleMesiPrecedenti()" class="text-xs font-bold text-slate-500 hover:text-slate-700">${mostraMesiPrecedenti ? '▾' : '▸'} Schedine dei mesi precedenti (${precedenti.length})</button>
+                        ${mostraMesiPrecedenti ? `<div class="space-y-3 mt-3">${precedenti.map(m => `
+                            <div class="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-2">
+                                <div class="text-[11px] font-bold text-slate-600">${nomeMese(m.mese)}</div>
+                                <div class="flex gap-1 flex-wrap items-center"><span class="text-[10px] text-slate-400 w-20">SuperEnalotto</span>${ballsSuperEnalotto(m.superenalotto, 'ball-sm')}</div>
+                                <div class="flex gap-1 flex-wrap items-center"><span class="text-[10px] text-slate-400 w-20">EuroJackpot</span>${ballsEuroJackpot(m.eurojackpot, 'ball-sm')}</div>
+                            </div>`).join('')}</div>` : ''}
+                    </div>` : ''}
+                </div>
+            `;
+        }
+
         // ---------- Editor schedine (riservato al Cassiere) ----------
         function apriEditorSchedina() {
+            if (modalitaMensile(romeNowInfo().iso)) return alert('Dal 1° dicembre le schedine sono generate a caso il primo di ogni mese e non si possono modificare.');
             const pin = prompt('Inserisci il PIN Cassiere:');
             if (pin === null) return;
             if (pin !== state.pin) return alert('PIN Errato!');
@@ -1153,6 +1277,8 @@
 
         initDatabase();
         loadAuto();
+        loadMensili();
+        setInterval(loadMensili, 10 * 60 * 1000);
         verificaSessione();
 
         // PWA: registra il service worker per funzionare come app installata (anche offline)

@@ -1,4 +1,4 @@
-const CACHE = 'superbotto-v3';
+const CACHE = 'superbotto-v4';
 const ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -54,6 +54,39 @@ self.addEventListener('fetch', (event) => {
         return res;
       }).catch(() => cached);
       return cached || network;
+    })
+  );
+});
+
+// ---------- Notifiche push ----------
+self.addEventListener('push', (event) => {
+  let dati = {};
+  try { dati = event.data ? event.data.json() : {}; } catch (err) { dati = { testo: event.data && event.data.text() }; }
+  const titolo = dati.titolo || 'SuperBotto 🍀';
+  event.waitUntil(
+    self.registration.showNotification(titolo, {
+      body: dati.testo || '',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: dati.tag || undefined,
+      renotify: !!dati.tag,
+      data: { pagina: dati.pagina || 'bacheca' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const pagina = (event.notification.data && event.notification.data.pagina) || 'bacheca';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((finestre) => {
+      for (const c of finestre) {
+        if (new URL(c.url).origin === self.location.origin) {
+          c.postMessage({ tipo: 'apri-pagina', pagina });
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow('/?pagina=' + encodeURIComponent(pagina));
     })
   );
 });
